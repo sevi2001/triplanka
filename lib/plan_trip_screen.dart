@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'vehicle_selection_screen.dart';
 
 class PlanTripScreen extends StatefulWidget {
   const PlanTripScreen({super.key, this.pickup = '', this.destination = ''});
@@ -113,36 +114,17 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       return;
     }
 
-    final stops = stopControllers
-        .map((controller) => controller.text.trim())
-        .join(', ');
-
-    final dateLabel = MaterialLocalizations.of(
-      context,
-    ).formatMediumDate(travelDate!);
-    final timeLabel = travelTime!.format(context);
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Trip details ready'),
-        content: SingleChildScrollView(
-          child: Text(
-            'Pickup: ${pickupController.text.trim()}\n'
-            '${stops.isEmpty ? '' : 'Stops: $stops\n'}'
-            'Destination: ${destinationController.text.trim()}\n'
-            'Date: $dateLabel\n'
-            'Time: $timeLabel\n'
-            'Passengers: $passengers\n\n'
-            'Vehicle selection will be added next.',
-          ),
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VehicleSelectionScreen(
+          pickup: pickupController.text.trim(),
+          destination: destinationController.text.trim(),
+          stops: stopControllers
+              .map((controller) => controller.text.trim())
+              .toList(),
+          departure: departure,
+          passengers: passengers,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('OK'),
-          ),
-        ],
       ),
     );
   }
