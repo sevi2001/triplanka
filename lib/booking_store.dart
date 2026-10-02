@@ -3,6 +3,24 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class TripCoordinates {
+  const TripCoordinates({required this.latitude, required this.longitude});
+
+  final double latitude;
+  final double longitude;
+
+  Map<String, dynamic> toJson() {
+    return {'latitude': latitude, 'longitude': longitude};
+  }
+
+  factory TripCoordinates.fromJson(Map<String, dynamic> json) {
+    return TripCoordinates(
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+    );
+  }
+}
+
 class TripBooking {
   TripBooking({
     required this.pickup,
@@ -12,6 +30,8 @@ class TripBooking {
     required this.passengers,
     required this.vehicle,
     this.notes = '',
+    this.pickupCoordinates,
+    this.destinationCoordinates,
   }) : stops = List.unmodifiable(stops);
 
   final String pickup;
@@ -22,6 +42,9 @@ class TripBooking {
   final String vehicle;
   final String notes;
 
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
+
   Map<String, dynamic> toJson() {
     return {
       'pickup': pickup,
@@ -31,10 +54,15 @@ class TripBooking {
       'passengers': passengers,
       'vehicle': vehicle,
       'notes': notes,
+      'pickupCoordinates': pickupCoordinates?.toJson(),
+      'destinationCoordinates': destinationCoordinates?.toJson(),
     };
   }
 
   factory TripBooking.fromJson(Map<String, dynamic> json) {
+    final pickupData = json['pickupCoordinates'];
+    final destinationData = json['destinationCoordinates'];
+
     return TripBooking(
       pickup: json['pickup'] as String,
       destination: json['destination'] as String,
@@ -43,6 +71,16 @@ class TripBooking {
       passengers: json['passengers'] as int,
       vehicle: json['vehicle'] as String,
       notes: json['notes'] as String? ?? '',
+      pickupCoordinates: pickupData == null
+          ? null
+          : TripCoordinates.fromJson(
+              Map<String, dynamic>.from(pickupData as Map),
+            ),
+      destinationCoordinates: destinationData == null
+          ? null
+          : TripCoordinates.fromJson(
+              Map<String, dynamic>.from(destinationData as Map),
+            ),
     );
   }
 }
@@ -76,7 +114,7 @@ class BookingStore {
 
     final encoded = jsonEncode(updated.map((item) => item.toJson()).toList());
 
-    // Only update the screen after storage succeeds.
+    // Update the screen only after storage succeeds.
     await preferences.setString(storageKey, encoded);
 
     bookings.value = List.unmodifiable(updated);
