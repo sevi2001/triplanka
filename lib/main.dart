@@ -220,13 +220,21 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
+          if (service == 'Airport transfer') {
+            return AirportTransferScreen(
+              pickup: pickup,
+              destination: destination,
+              pickupCoordinates: selectedPickupCoordinates,
+              destinationCoordinates: selectedDestinationCoordinates,
+            );
+          }
+
           if (service == 'Full-day driver') {
             return FullDayDriverScreen(
               pickup: pickup,
               destination: destination,
             );
           }
-
           return BookingScreen(
             service: service,
             pickup: pickup,

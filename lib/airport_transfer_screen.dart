@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'booking_store.dart';
+import 'location_picker_screen.dart';
 import 'vehicle_selection_screen.dart';
 
 class AirportTransferScreen extends StatefulWidget {
@@ -6,10 +9,14 @@ class AirportTransferScreen extends StatefulWidget {
     super.key,
     this.pickup = '',
     this.destination = '',
+    this.pickupCoordinates,
+    this.destinationCoordinates,
   });
 
   final String pickup;
   final String destination;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
   State<AirportTransferScreen> createState() => _AirportTransferScreenState();
@@ -23,16 +30,33 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
 
   bool airportPickup = true;
   String airport = 'Bandaranaike Airport (CMB)';
+
+  TripCoordinates? airportCoordinates;
+  String? airportMeetingPoint;
+
+  String pickupLocation = '';
+  String dropoffLocation = '';
+  TripCoordinates? pickupLocationCoordinates;
+  TripCoordinates? dropoffLocationCoordinates;
+
   DateTime? travelDate;
   TimeOfDay? travelTime;
   int passengers = 1;
   int bags = 0;
 
+  TripCoordinates? get locationCoordinates =>
+      airportPickup ? dropoffLocationCoordinates : pickupLocationCoordinates;
+
   @override
   void initState() {
     super.initState();
 
-    locationController = TextEditingController(text: widget.destination);
+    pickupLocation = widget.pickup;
+    dropoffLocation = widget.destination;
+    pickupLocationCoordinates = widget.pickupCoordinates;
+    dropoffLocationCoordinates = widget.destinationCoordinates;
+
+    locationController = TextEditingController(text: dropoffLocation);
   }
 
   @override
@@ -46,6 +70,83 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void changeDirection(bool fromAirport) {
+    if (fromAirport == airportPickup) return;
+
+    setState(() {
+      airportPickup = fromAirport;
+      locationController.text = airportPickup
+          ? dropoffLocation
+          : pickupLocation;
+    });
+  }
+
+  void editLocation(String value) {
+    setState(() {
+      if (airportPickup) {
+        dropoffLocation = value;
+        dropoffLocationCoordinates = null;
+      } else {
+        pickupLocation = value;
+        pickupLocationCoordinates = null;
+      }
+    });
+  }
+
+  Future<void> searchLocation({required bool airportPoint}) async {
+    FocusScope.of(context).unfocus();
+
+    final fromAirport = airportPickup;
+    final selectedAirport = airport;
+
+    final selected = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => LocationPickerScreen(
+          title: airportPoint
+              ? 'Find $selectedAirport'
+              : fromAirport
+              ? 'Find drop-off'
+              : 'Find pickup',
+          confirmLabel: airportPoint
+              ? 'Use airport meeting point'
+              : fromAirport
+              ? 'Use this drop-off'
+              : 'Use this pickup',
+        ),
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+
+    final coordinates = TripCoordinates(
+      latitude: selected.point.latitude,
+      longitude: selected.point.longitude,
+    );
+
+    setState(() {
+      if (airportPoint) {
+        if (airport != selectedAirport) return;
+
+        airportMeetingPoint = selected.name;
+        airportCoordinates = coordinates;
+      } else if (fromAirport) {
+        dropoffLocation = selected.name;
+        dropoffLocationCoordinates = coordinates;
+
+        if (airportPickup) {
+          locationController.text = selected.name;
+        }
+      } else {
+        pickupLocation = selected.name;
+        pickupLocationCoordinates = coordinates;
+
+        if (!airportPickup) {
+          locationController.text = selected.name;
+        }
+      }
+    });
   }
 
   Future<void> chooseDate() async {
@@ -108,10 +209,27 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
     }
 
     final location = locationController.text.trim();
+    final otherCoordinates = locationCoordinates;
+    final airportPoint = airportCoordinates;
+
+    final samePoint =
+        airportPoint != null &&
+        otherCoordinates != null &&
+        airportPoint.latitude == otherCoordinates.latitude &&
+        airportPoint.longitude == otherCoordinates.longitude;
+
+    if (samePoint || location.toLowerCase() == airport.toLowerCase()) {
+      showMessage('Pickup and destination must be different.');
+      return;
+    }
+
     final flight = flightController.text.trim();
 
     final notes = [
       'Airport transfer',
+      airportPickup ? 'From airport' : 'To airport',
+      if (airportMeetingPoint != null)
+        'Airport meeting point: $airportMeetingPoint',
       'Luggage: $bags bags',
       if (flight.isNotEmpty) 'Flight: $flight',
     ].join('\n');
@@ -121,11 +239,27 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
         builder: (_) => VehicleSelectionScreen(
           pickup: airportPickup ? airport : location,
           destination: airportPickup ? location : airport,
+          pickupCoordinates: airportPickup ? airportPoint : otherCoordinates,
+          destinationCoordinates: airportPickup
+              ? otherCoordinates
+              : airportPoint,
           stops: const [],
           departure: departure,
           passengers: passengers,
           notes: notes,
         ),
+      ),
+    );
+  }
+
+  Widget coordinateLabel(TripCoordinates coordinates) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        'Map location selected: '
+        '${coordinates.latitude.toStringAsFixed(5)}, '
+        '${coordinates.longitude.toStringAsFixed(5)}',
+        style: const TextStyle(color: Colors.teal, fontSize: 12),
       ),
     );
   }
@@ -173,6 +307,9 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
         ? 'Choose time'
         : travelTime!.format(context);
 
+    final selectedAirportPoint = airportCoordinates;
+    final selectedOtherPoint = locationCoordinates;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Airport transfer')),
       body: SafeArea(
@@ -198,12 +335,7 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
                     ],
                     selected: {airportPickup},
                     onSelectionChanged: (selection) {
-                      setState(() {
-                        airportPickup = selection.first;
-                        locationController.text = airportPickup
-                            ? widget.destination
-                            : widget.pickup;
-                      });
+                      changeDirection(selection.first);
                     },
                   ),
                   const SizedBox(height: 20),
@@ -225,16 +357,38 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
                       ),
                     ],
                     onChanged: (value) {
-                      if (value == null) return;
+                      if (value == null || value == airport) return;
 
                       setState(() {
                         airport = value;
+                        airportCoordinates = null;
+                        airportMeetingPoint = null;
                       });
                     },
                   ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => searchLocation(airportPoint: true),
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search airport meeting point'),
+                  ),
+                  const Text(
+                    'Search for the selected airport and choose '
+                    'the correct terminal or meeting point. '
+                    'The app does not verify that point automatically.',
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  if (airportMeetingPoint != null) ...[
+                    const SizedBox(height: 8),
+                    Text('Meeting point: $airportMeetingPoint'),
+                  ],
+                  if (selectedAirportPoint != null)
+                    coordinateLabel(selectedAirportPoint),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: locationController,
+                    onChanged: editLocation,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     decoration: InputDecoration(
                       labelText: airportPickup
                           ? 'Drop-off location'
@@ -249,9 +403,19 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
                       if (value == null || value.trim().isEmpty) {
                         return 'Enter a location';
                       }
+
                       return null;
                     },
                   ),
+                  TextButton.icon(
+                    onPressed: () => searchLocation(airportPoint: false),
+                    icon: const Icon(Icons.search),
+                    label: Text(
+                      airportPickup ? 'Search drop-off' : 'Search pickup',
+                    ),
+                  ),
+                  if (selectedOtherPoint != null)
+                    coordinateLabel(selectedOtherPoint),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: flightController,
@@ -320,6 +484,12 @@ class _AirportTransferScreenState extends State<AirportTransferScreen> {
                     'Vehicle selection currently checks '
                     'passenger seats only. Luggage capacity '
                     'must be confirmed separately.',
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Select both map locations to enable '
+                    'View trip map in your saved booking.',
                     style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 24),
