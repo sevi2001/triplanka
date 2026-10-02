@@ -196,7 +196,12 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute<void>(
         builder: (_) {
           if (service == 'Ride now') {
-            return RideNowScreen(pickup: pickup, destination: destination);
+            return RideNowScreen(
+              pickup: pickup,
+              destination: destination,
+              pickupCoordinates: selectedPickupCoordinates,
+              destinationCoordinates: selectedDestinationCoordinates,
+            );
           }
 
           if (service == 'Plan a trip') {

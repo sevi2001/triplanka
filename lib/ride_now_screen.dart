@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
+
+import 'booking_store.dart';
+import 'location_picker_screen.dart';
 import 'vehicle_selection_screen.dart';
 
 class RideNowScreen extends StatefulWidget {
-  const RideNowScreen({super.key, this.pickup = '', this.destination = ''});
+  const RideNowScreen({
+    super.key,
+    this.pickup = '',
+    this.destination = '',
+    this.pickupCoordinates,
+    this.destinationCoordinates,
+  });
 
   final String pickup;
   final String destination;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
   State<RideNowScreen> createState() => _RideNowScreenState();
@@ -17,6 +28,9 @@ class _RideNowScreenState extends State<RideNowScreen> {
   late final TextEditingController pickupController;
   late final TextEditingController destinationController;
 
+  TripCoordinates? pickupCoordinates;
+  TripCoordinates? destinationCoordinates;
+
   int passengers = 1;
 
   @override
@@ -24,8 +38,10 @@ class _RideNowScreenState extends State<RideNowScreen> {
     super.initState();
 
     pickupController = TextEditingController(text: widget.pickup);
-
     destinationController = TextEditingController(text: widget.destination);
+
+    pickupCoordinates = widget.pickupCoordinates;
+    destinationCoordinates = widget.destinationCoordinates;
   }
 
   @override
@@ -33,6 +49,42 @@ class _RideNowScreenState extends State<RideNowScreen> {
     pickupController.dispose();
     destinationController.dispose();
     super.dispose();
+  }
+
+  Future<void> searchLocation({required bool isPickup}) async {
+    FocusScope.of(context).unfocus();
+
+    final location = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => LocationPickerScreen(
+          title: isPickup ? 'Find pickup' : 'Find destination',
+          confirmLabel: isPickup ? 'Use this pickup' : 'Use this destination',
+        ),
+      ),
+    );
+
+    if (!mounted || location == null) return;
+
+    final coordinates = TripCoordinates(
+      latitude: location.point.latitude,
+      longitude: location.point.longitude,
+    );
+
+    setState(() {
+      if (isPickup) {
+        pickupController.text = location.name;
+        pickupCoordinates = coordinates;
+      } else {
+        destinationController.text = location.name;
+        destinationCoordinates = coordinates;
+      }
+    });
+  }
+
+  void showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void continueBooking() {
@@ -43,12 +95,17 @@ class _RideNowScreenState extends State<RideNowScreen> {
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
 
-    if (pickup.toLowerCase() == destination.toLowerCase()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pickup and destination must be different.'),
-        ),
-      );
+    final pickupPoint = pickupCoordinates;
+    final destinationPoint = destinationCoordinates;
+
+    final sameCoordinates =
+        pickupPoint != null &&
+        destinationPoint != null &&
+        pickupPoint.latitude == destinationPoint.latitude &&
+        pickupPoint.longitude == destinationPoint.longitude;
+
+    if (pickup.toLowerCase() == destination.toLowerCase() || sameCoordinates) {
+      showMessage('Pickup and destination must be different.');
       return;
     }
 
@@ -57,6 +114,8 @@ class _RideNowScreenState extends State<RideNowScreen> {
         builder: (_) => VehicleSelectionScreen(
           pickup: pickup,
           destination: destination,
+          pickupCoordinates: pickupPoint,
+          destinationCoordinates: destinationPoint,
           stops: const [],
           departure: DateTime.now(),
           passengers: passengers,
@@ -71,9 +130,11 @@ class _RideNowScreenState extends State<RideNowScreen> {
     required String label,
     required IconData icon,
     required TextEditingController controller,
+    required ValueChanged<String> onChanged,
   }) {
     return TextFormField(
       controller: controller,
+      onChanged: onChanged,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: InputDecoration(
         labelText: label,
@@ -86,8 +147,35 @@ class _RideNowScreenState extends State<RideNowScreen> {
         if (value == null || value.trim().isEmpty) {
           return 'Enter a location';
         }
+
         return null;
       },
+    );
+  }
+
+  Widget locationSearch({
+    required bool isPickup,
+    required TripCoordinates? coordinates,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextButton.icon(
+          onPressed: () => searchLocation(isPickup: isPickup),
+          icon: const Icon(Icons.search),
+          label: Text(isPickup ? 'Search pickup' : 'Search destination'),
+        ),
+        if (coordinates != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Map location selected: '
+              '${coordinates.latitude.toStringAsFixed(5)}, '
+              '${coordinates.longitude.toStringAsFixed(5)}',
+              style: const TextStyle(color: Colors.teal, fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 
@@ -112,7 +200,7 @@ class _RideNowScreenState extends State<RideNowScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Enter your journey details.',
+                    'Search for places or enter your journey details.',
                     style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 24),
@@ -120,12 +208,34 @@ class _RideNowScreenState extends State<RideNowScreen> {
                     label: 'Pickup location',
                     icon: Icons.my_location,
                     controller: pickupController,
+                    onChanged: (_) {
+                      if (pickupCoordinates == null) return;
+
+                      setState(() {
+                        pickupCoordinates = null;
+                      });
+                    },
+                  ),
+                  locationSearch(
+                    isPickup: true,
+                    coordinates: pickupCoordinates,
                   ),
                   const SizedBox(height: 16),
                   locationField(
                     label: 'Destination',
                     icon: Icons.location_on,
                     controller: destinationController,
+                    onChanged: (_) {
+                      if (destinationCoordinates == null) return;
+
+                      setState(() {
+                        destinationCoordinates = null;
+                      });
+                    },
+                  ),
+                  locationSearch(
+                    isPickup: false,
+                    coordinates: destinationCoordinates,
                   ),
                   const SizedBox(height: 20),
                   Card(
