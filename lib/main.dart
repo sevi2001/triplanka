@@ -126,6 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final pickupController = TextEditingController();
   final destinationController = TextEditingController();
 
+  TripCoordinates? pickupCoordinates;
+  TripCoordinates? destinationCoordinates;
+
   @override
   void dispose() {
     pickupController.dispose();
@@ -134,6 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> selectPickupOnMap() async {
+    FocusScope.of(context).unfocus();
+
     final location = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
         builder: (_) => const LocationPickerScreen(
@@ -145,10 +150,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted || location == null) return;
 
-    pickupController.text = location.name;
+    setState(() {
+      pickupController.text = location.name;
+      pickupCoordinates = TripCoordinates(
+        latitude: location.point.latitude,
+        longitude: location.point.longitude,
+      );
+    });
   }
 
   Future<void> selectDestinationOnMap() async {
+    FocusScope.of(context).unfocus();
+
     final location = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
         builder: (_) => const LocationPickerScreen(
@@ -160,12 +173,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted || location == null) return;
 
-    destinationController.text = location.name;
+    setState(() {
+      destinationController.text = location.name;
+      destinationCoordinates = TripCoordinates(
+        latitude: location.point.latitude,
+        longitude: location.point.longitude,
+      );
+    });
   }
 
   void openBooking(String service) {
+    FocusScope.of(context).unfocus();
+
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
+
+    // Capture the selected coordinates for this booking.
+    final selectedPickupCoordinates = pickupCoordinates;
+    final selectedDestinationCoordinates = destinationCoordinates;
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -175,7 +200,12 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           if (service == 'Plan a trip') {
-            return PlanTripScreen(pickup: pickup, destination: destination);
+            return PlanTripScreen(
+              pickup: pickup,
+              destination: destination,
+              pickupCoordinates: selectedPickupCoordinates,
+              destinationCoordinates: selectedDestinationCoordinates,
+            );
           }
 
           if (service == 'Airport transfer') {
@@ -206,9 +236,11 @@ class _HomeScreenState extends State<HomeScreen> {
     required String label,
     required IconData icon,
     required TextEditingController controller,
+    required ValueChanged<String> onChanged,
   }) {
     return TextField(
       controller: controller,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: Colors.teal),
@@ -219,8 +251,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget coordinateLabel(TripCoordinates coordinates) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        'Map location selected: '
+        '${coordinates.latitude.toStringAsFixed(5)}, '
+        '${coordinates.longitude.toStringAsFixed(5)}',
+        style: const TextStyle(color: Colors.teal, fontSize: 12),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedPickup = pickupCoordinates;
+    final selectedDestination = destinationCoordinates;
+
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -257,6 +304,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Pickup location',
                 icon: Icons.my_location,
                 controller: pickupController,
+                onChanged: (_) {
+                  if (pickupCoordinates == null) return;
+
+                  setState(() {
+                    pickupCoordinates = null;
+                  });
+                },
               ),
               Align(
                 alignment: Alignment.centerLeft,
@@ -266,11 +320,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: const Text('Search pickup'),
                 ),
               ),
+              if (selectedPickup != null) coordinateLabel(selectedPickup),
               const SizedBox(height: 14),
               locationField(
                 label: 'Destination',
                 icon: Icons.location_on,
                 controller: destinationController,
+                onChanged: (_) {
+                  if (destinationCoordinates == null) return;
+
+                  setState(() {
+                    destinationCoordinates = null;
+                  });
+                },
               ),
               Align(
                 alignment: Alignment.centerLeft,
@@ -280,6 +342,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: const Text('Search destination'),
                 ),
               ),
+              if (selectedDestination != null)
+                coordinateLabel(selectedDestination),
               const SizedBox(height: 24),
               const Text(
                 'Travel options',

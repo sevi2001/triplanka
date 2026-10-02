@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
+
+import 'booking_store.dart';
+import 'location_picker_screen.dart';
 import 'vehicle_selection_screen.dart';
 
 class PlanTripScreen extends StatefulWidget {
-  const PlanTripScreen({super.key, this.pickup = '', this.destination = ''});
+  const PlanTripScreen({
+    super.key,
+    this.pickup = '',
+    this.destination = '',
+    this.pickupCoordinates,
+    this.destinationCoordinates,
+  });
 
   final String pickup;
   final String destination;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
   State<PlanTripScreen> createState() => _PlanTripScreenState();
@@ -18,6 +29,9 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   late final TextEditingController destinationController;
 
   final List<TextEditingController> stopControllers = [];
+
+  TripCoordinates? pickupCoordinates;
+  TripCoordinates? destinationCoordinates;
 
   DateTime? travelDate;
   TimeOfDay? travelTime;
@@ -33,8 +47,10 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     super.initState();
 
     pickupController = TextEditingController(text: widget.pickup);
-
     destinationController = TextEditingController(text: widget.destination);
+
+    pickupCoordinates = widget.pickupCoordinates;
+    destinationCoordinates = widget.destinationCoordinates;
   }
 
   @override
@@ -53,7 +69,38 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     if (value == null || value.trim().isEmpty) {
       return 'Enter a location';
     }
+
     return null;
+  }
+
+  Future<void> searchLocation({required bool isPickup}) async {
+    FocusScope.of(context).unfocus();
+
+    final location = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => LocationPickerScreen(
+          title: isPickup ? 'Find pickup' : 'Find destination',
+          confirmLabel: isPickup ? 'Use this pickup' : 'Use this destination',
+        ),
+      ),
+    );
+
+    if (!mounted || location == null) return;
+
+    final coordinates = TripCoordinates(
+      latitude: location.point.latitude,
+      longitude: location.point.longitude,
+    );
+
+    setState(() {
+      if (isPickup) {
+        pickupController.text = location.name;
+        pickupCoordinates = coordinates;
+      } else {
+        destinationController.text = location.name;
+        destinationCoordinates = coordinates;
+      }
+    });
   }
 
   Future<void> chooseDate() async {
@@ -74,7 +121,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     setState(() {
       travelDate = selected;
 
-      // Clear a return date that precedes the new outbound date.
       if (returnDate != null && returnDate!.isBefore(selected)) {
         returnDate = null;
         returnTime = null;
@@ -146,6 +192,14 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       return;
     }
 
+    final pickup = pickupController.text.trim();
+    final destination = destinationController.text.trim();
+
+    if (pickup.toLowerCase() == destination.toLowerCase()) {
+      showMessage('Choose different pickup and destination locations.');
+      return;
+    }
+
     if (travelDate == null || travelTime == null) {
       showMessage('Choose a departure date and time.');
       return;
@@ -193,8 +247,8 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
       notes = [
         'Return trip',
-        'Return from: ${destinationController.text.trim()}',
-        'Return to: ${pickupController.text.trim()}',
+        'Return from: $destination',
+        'Return to: $pickup',
         'Return departure: $dateLabel at $timeLabel',
         'Return stops are not specified.',
       ].join('\n');
@@ -203,8 +257,10 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => VehicleSelectionScreen(
-          pickup: pickupController.text.trim(),
-          destination: destinationController.text.trim(),
+          pickup: pickup,
+          destination: destination,
+          pickupCoordinates: pickupCoordinates,
+          destinationCoordinates: destinationCoordinates,
           stops: stopControllers
               .map((controller) => controller.text.trim())
               .toList(),
@@ -238,10 +294,12 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     required TextEditingController controller,
     required String label,
     required IconData icon,
+    ValueChanged<String>? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       validator: validateLocation,
+      onChanged: onChanged,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: InputDecoration(
         labelText: label,
@@ -250,6 +308,32 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
+    );
+  }
+
+  Widget locationSearch({
+    required bool isPickup,
+    required TripCoordinates? coordinates,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextButton.icon(
+          onPressed: () => searchLocation(isPickup: isPickup),
+          icon: const Icon(Icons.search),
+          label: Text(isPickup ? 'Search pickup' : 'Search destination'),
+        ),
+        if (coordinates != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Map location selected: '
+              '${coordinates.latitude.toStringAsFixed(5)}, '
+              '${coordinates.longitude.toStringAsFixed(5)}',
+              style: const TextStyle(color: Colors.teal, fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 
@@ -316,9 +400,19 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     controller: pickupController,
                     label: 'Pickup location',
                     icon: Icons.my_location,
+                    onChanged: (_) {
+                      if (pickupCoordinates == null) return;
+
+                      setState(() {
+                        pickupCoordinates = null;
+                      });
+                    },
+                  ),
+                  locationSearch(
+                    isPickup: true,
+                    coordinates: pickupCoordinates,
                   ),
                   const SizedBox(height: 14),
-
                   for (int i = 0; i < stopControllers.length; i++)
                     Padding(
                       key: ObjectKey(stopControllers[i]),
@@ -343,11 +437,21 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                         ],
                       ),
                     ),
-
                   locationField(
                     controller: destinationController,
                     label: 'Destination',
                     icon: Icons.location_on,
+                    onChanged: (_) {
+                      if (destinationCoordinates == null) return;
+
+                      setState(() {
+                        destinationCoordinates = null;
+                      });
+                    },
+                  ),
+                  locationSearch(
+                    isPickup: false,
+                    coordinates: destinationCoordinates,
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
@@ -369,7 +473,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     onTap: chooseTime,
                   ),
                   const SizedBox(height: 16),
-
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -412,7 +515,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Return trip'),
@@ -426,7 +528,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                       });
                     },
                   ),
-
                   if (returnTrip) ...[
                     dateTimeCard(
                       title: 'Return date',
@@ -447,7 +548,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                       style: TextStyle(color: Colors.black54),
                     ),
                   ],
-
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: continueBooking,
