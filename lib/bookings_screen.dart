@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'booking_store.dart';
 import 'split_cost_screen.dart';
 
@@ -60,6 +62,66 @@ class BookingCard extends StatelessWidget {
 
   final TripBooking booking;
 
+  Future<void> shareTripDetails(BuildContext context) async {
+    final date = MaterialLocalizations.of(
+      context,
+    ).formatMediumDate(booking.departure);
+
+    final time = TimeOfDay.fromDateTime(booking.departure).format(context);
+
+    final details = [
+      'TripLanka — Trip details',
+      '',
+      'Pickup: ${booking.pickup}',
+      'Destination: ${booking.destination}',
+      if (booking.stops.isNotEmpty) 'Stops: ${booking.stops.join(' → ')}',
+      'Departure / request time: $date at $time',
+      'Vehicle type: ${booking.vehicle}',
+      'Passengers: ${booking.passengers}',
+      if (booking.notes.isNotEmpty) ...[
+        '',
+        'Additional details:',
+        booking.notes,
+      ],
+      '',
+      'Demo booking. No driver has been assigned.',
+      'This message does not include live location.',
+    ].join('\n');
+
+    try {
+      await Clipboard.setData(ClipboardData(text: details));
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Trip details copied. '
+              'Paste them into your messaging app.',
+            ),
+          ),
+        );
+    } catch (_) {
+      if (!context.mounted) return;
+
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Trip details'),
+          content: SingleChildScrollView(child: SelectableText(details)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final date = MaterialLocalizations.of(
@@ -100,13 +162,11 @@ class BookingCard extends StatelessWidget {
               Text('Stops: ${booking.stops.join(' → ')}'),
             ],
             const SizedBox(height: 12),
-            Text('Departure: $date at $time'),
+            Text('Departure / request time: $date at $time'),
             const SizedBox(height: 8),
             Text('Vehicle: ${booking.vehicle}'),
             const SizedBox(height: 8),
             Text('Passengers: ${booking.passengers}'),
-
-            // Show flight, luggage, and other saved notes.
             if (booking.notes.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Divider(),
@@ -124,7 +184,6 @@ class BookingCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(booking.notes),
             ],
-
             const SizedBox(height: 12),
             const Text(
               'No driver has been assigned.',
@@ -142,6 +201,12 @@ class BookingCard extends StatelessWidget {
               },
               icon: const Icon(Icons.groups),
               label: const Text('Split the cost'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => shareTripDetails(context),
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share trip details'),
             ),
           ],
         ),
