@@ -21,12 +21,19 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
   DateTime? travelDate;
   TimeOfDay? travelTime;
+
+  bool returnTrip = false;
+  DateTime? returnDate;
+  TimeOfDay? returnTime;
+
   int passengers = 1;
 
   @override
   void initState() {
     super.initState();
+
     pickupController = TextEditingController(text: widget.pickup);
+
     destinationController = TextEditingController(text: widget.destination);
   }
 
@@ -66,6 +73,12 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
     setState(() {
       travelDate = selected;
+
+      // Clear a return date that precedes the new outbound date.
+      if (returnDate != null && returnDate!.isBefore(selected)) {
+        returnDate = null;
+        returnTime = null;
+      }
     });
   }
 
@@ -79,6 +92,43 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
     setState(() {
       travelTime = selected;
+    });
+  }
+
+  Future<void> chooseReturnDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final firstDate = travelDate != null && travelDate!.isAfter(today)
+        ? travelDate!
+        : today;
+
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: returnDate != null && !returnDate!.isBefore(firstDate)
+          ? returnDate!
+          : firstDate,
+      firstDate: firstDate,
+      lastDate: DateTime(today.year + 1, today.month, today.day),
+    );
+
+    if (!mounted || selected == null) return;
+
+    setState(() {
+      returnDate = selected;
+    });
+  }
+
+  Future<void> chooseReturnTime() async {
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: returnTime ?? TimeOfDay.now(),
+    );
+
+    if (!mounted || selected == null) return;
+
+    setState(() {
+      returnTime = selected;
     });
   }
 
@@ -97,7 +147,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     }
 
     if (travelDate == null || travelTime == null) {
-      showMessage('Please choose a travel date and time.');
+      showMessage('Choose a departure date and time.');
       return;
     }
 
@@ -114,6 +164,42 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       return;
     }
 
+    String notes = 'One-way trip';
+
+    if (returnTrip) {
+      if (returnDate == null || returnTime == null) {
+        showMessage('Choose a return date and time.');
+        return;
+      }
+
+      final returnDeparture = DateTime(
+        returnDate!.year,
+        returnDate!.month,
+        returnDate!.day,
+        returnTime!.hour,
+        returnTime!.minute,
+      );
+
+      if (!returnDeparture.isAfter(departure)) {
+        showMessage('Return departure must be after the outbound departure.');
+        return;
+      }
+
+      final dateLabel = MaterialLocalizations.of(
+        context,
+      ).formatMediumDate(returnDeparture);
+
+      final timeLabel = TimeOfDay.fromDateTime(returnDeparture).format(context);
+
+      notes = [
+        'Return trip',
+        'Return from: ${destinationController.text.trim()}',
+        'Return to: ${pickupController.text.trim()}',
+        'Return departure: $dateLabel at $timeLabel',
+        'Return stops are not specified.',
+      ].join('\n');
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => VehicleSelectionScreen(
@@ -124,6 +210,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
               .toList(),
           departure: departure,
           passengers: passengers,
+          notes: notes,
         ),
       ),
     );
@@ -166,15 +253,42 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     );
   }
 
+  Widget dateTimeCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      child: ListTile(
+        leading: Icon(icon, color: Colors.teal),
+        title: Text(title),
+        subtitle: Text(value),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final localizations = MaterialLocalizations.of(context);
+
     final dateLabel = travelDate == null
         ? 'Choose date'
-        : MaterialLocalizations.of(context).formatMediumDate(travelDate!);
+        : localizations.formatMediumDate(travelDate!);
 
     final timeLabel = travelTime == null
         ? 'Choose time'
         : travelTime!.format(context);
+
+    final returnDateLabel = returnDate == null
+        ? 'Choose return date'
+        : localizations.formatMediumDate(returnDate!);
+
+    final returnTimeLabel = returnTime == null
+        ? 'Choose return time'
+        : returnTime!.format(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Plan a trip')),
@@ -193,7 +307,8 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Book a one-way trip with optional stops.',
+                    'Plan a one-way or return trip '
+                    'with optional outbound stops.',
                     style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 24),
@@ -203,6 +318,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     icon: Icons.my_location,
                   ),
                   const SizedBox(height: 14),
+
                   for (int i = 0; i < stopControllers.length; i++)
                     Padding(
                       key: ObjectKey(stopControllers[i]),
@@ -227,6 +343,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                         ],
                       ),
                     ),
+
                   locationField(
                     controller: destinationController,
                     label: 'Destination',
@@ -239,31 +356,20 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     label: const Text('Add stop'),
                   ),
                   const SizedBox(height: 20),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(
-                        Icons.calendar_month,
-                        color: Colors.teal,
-                      ),
-                      title: const Text('Travel date'),
-                      subtitle: Text(dateLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseDate,
-                    ),
+                  dateTimeCard(
+                    title: 'Travel date',
+                    value: dateLabel,
+                    icon: Icons.calendar_month,
+                    onTap: chooseDate,
                   ),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(
-                        Icons.access_time,
-                        color: Colors.teal,
-                      ),
-                      title: const Text('Departure time'),
-                      subtitle: Text(timeLabel),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: chooseTime,
-                    ),
+                  dateTimeCard(
+                    title: 'Departure time',
+                    value: timeLabel,
+                    icon: Icons.access_time,
+                    onTap: chooseTime,
                   ),
                   const SizedBox(height: 16),
+
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -305,6 +411,43 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 20),
+
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Return trip'),
+                    subtitle: const Text(
+                      'Arrange travel back to your pickup location.',
+                    ),
+                    value: returnTrip,
+                    onChanged: (value) {
+                      setState(() {
+                        returnTrip = value;
+                      });
+                    },
+                  ),
+
+                  if (returnTrip) ...[
+                    dateTimeCard(
+                      title: 'Return date',
+                      value: returnDateLabel,
+                      icon: Icons.calendar_month,
+                      onTap: chooseReturnDate,
+                    ),
+                    dateTimeCard(
+                      title: 'Return departure time',
+                      value: returnTimeLabel,
+                      icon: Icons.access_time,
+                      onTap: chooseReturnTime,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Allow enough time for the outbound journey '
+                      'and your activities before returning.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  ],
+
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: continueBooking,
