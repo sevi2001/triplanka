@@ -8,6 +8,7 @@ import 'home_map.dart';
 import 'plan_trip_screen.dart';
 import 'profile_screen.dart';
 import 'ride_now_screen.dart';
+import 'location_picker_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -132,6 +133,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  Future<void> selectPickupOnMap() async {
+    final location = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => const LocationPickerScreen(),
+      ),
+    );
+
+    if (!mounted || location == null) return;
+
+    pickupController.text = location.name;
+  }
+
   void openBooking(String service) {
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
@@ -226,6 +239,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Pickup location',
                 icon: Icons.my_location,
                 controller: pickupController,
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: selectPickupOnMap,
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('Select pickup on map'),
+                ),
               ),
               const SizedBox(height: 14),
               locationField(
