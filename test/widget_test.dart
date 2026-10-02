@@ -18,7 +18,7 @@ void main() {
   });
 
   testWidgets('Home passes locations to trip planning form', (tester) async {
-    await tester.pumpWidget(const TripLankaApp());
+    await tester.pumpWidget(const TripLankaApp(loadMapTiles: false));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).at(0), 'Colombo');

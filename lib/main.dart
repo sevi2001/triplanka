@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'plan_trip_screen.dart';
-import 'bookings_screen.dart';
-import 'booking_store.dart';
+
 import 'airport_transfer_screen.dart';
+import 'booking_store.dart';
+import 'bookings_screen.dart';
 import 'full_day_driver_screen.dart';
+import 'home_map.dart';
+import 'plan_trip_screen.dart';
+import 'profile_screen.dart';
+import 'ride_now_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,7 +15,9 @@ Future<void> main() async {
   try {
     await BookingStore.load();
     runApp(const TripLankaApp());
-  } catch (_) {
+  } catch (error) {
+    debugPrint('Booking load failed: $error');
+
     runApp(
       const MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -35,7 +41,9 @@ Future<void> main() async {
 }
 
 class TripLankaApp extends StatelessWidget {
-  const TripLankaApp({super.key});
+  const TripLankaApp({super.key, this.loadMapTiles = true});
+
+  final bool loadMapTiles;
 
   @override
   Widget build(BuildContext context) {
@@ -47,13 +55,15 @@ class TripLankaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         scaffoldBackgroundColor: const Color(0xFFF5F7FA),
       ),
-      home: const MainScreen(),
+      home: MainScreen(loadMapTiles: loadMapTiles),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, this.loadMapTiles = true});
+
+  final bool loadMapTiles;
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -67,10 +77,10 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: IndexedStack(
         index: selectedIndex,
-        children: const [
-          HomeScreen(),
-          BookingsScreen(),
-          SafeArea(child: Center(child: Text('Your profile'))),
+        children: [
+          HomeScreen(loadMapTiles: widget.loadMapTiles),
+          const BookingsScreen(),
+          const ProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -87,11 +97,13 @@ class _MainScreenState extends State<MainScreen> {
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.calendar_month),
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
             label: 'Bookings',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
             label: 'Profile',
           ),
         ],
@@ -101,7 +113,9 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.loadMapTiles = true});
+
+  final bool loadMapTiles;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -125,6 +139,10 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) {
+          if (service == 'Ride now') {
+            return RideNowScreen(pickup: pickup, destination: destination);
+          }
+
           if (service == 'Plan a trip') {
             return PlanTripScreen(pickup: pickup, destination: destination);
           }
@@ -245,22 +263,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icons.directions_car,
                 onTap: () => openBooking('Full-day driver'),
               ),
-              const SizedBox(height: 16),
-              Container(
-                height: 180,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0F2F1),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.map_outlined, size: 56, color: Colors.teal),
-                    SizedBox(height: 10),
-                    Text('Map placeholder'),
-                  ],
-                ),
+              const SizedBox(height: 20),
+              const Text(
+                'Explore the map',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
+              const SizedBox(height: 8),
+              const Text(
+                'The marker shows Colombo. '
+                'Your current location is not connected yet.',
+                style: TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              HomeMap(loadTiles: widget.loadMapTiles),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -342,9 +358,8 @@ class BookingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'This service form will be added later. '
-                  'Use Plan a trip on Home to create '
-                  'a demo booking now.',
+                  'Choose a travel option from Home '
+                  'to create a demo booking.',
                 ),
               ],
             ),
