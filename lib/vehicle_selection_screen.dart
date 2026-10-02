@@ -297,7 +297,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 detail('Passengers', '${widget.passengers}', Icons.people),
                 detail('Vehicle', widget.vehicle.name, widget.vehicle.icon),
                 if (widget.notes.isNotEmpty)
-                  detail('Transfer details', widget.notes, Icons.notes),
+                  detail('Additional details', widget.notes, Icons.notes),
                 const SizedBox(height: 20),
                 const Text(
                   'Demo only: no payment is taken and no driver '

@@ -3,6 +3,7 @@ import 'plan_trip_screen.dart';
 import 'bookings_screen.dart';
 import 'booking_store.dart';
 import 'airport_transfer_screen.dart';
+import 'full_day_driver_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,6 +131,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (service == 'Airport transfer') {
             return AirportTransferScreen(
+              pickup: pickup,
+              destination: destination,
+            );
+          }
+
+          if (service == 'Full-day driver') {
+            return FullDayDriverScreen(
               pickup: pickup,
               destination: destination,
             );
