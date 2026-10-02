@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'plan_trip_screen.dart';
+import 'bookings_screen.dart';
 
 void main() {
   runApp(const TripLankaApp());
@@ -39,7 +41,7 @@ class _MainScreenState extends State<MainScreen> {
         index: selectedIndex,
         children: const [
           HomeScreen(),
-          Center(child: Text('No bookings yet')),
+          BookingsScreen(),
           Center(child: Text('Your profile')),
         ],
       ),
@@ -89,13 +91,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void openBooking(String service) {
+    final pickup = pickupController.text.trim();
+    final destination = destinationController.text.trim();
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BookingScreen(
-          service: service,
-          pickup: pickupController.text.trim(),
-          destination: destinationController.text.trim(),
-        ),
+        builder: (_) {
+          if (service == 'Plan a trip') {
+            return PlanTripScreen(pickup: pickup, destination: destination);
+          }
+
+          return BookingScreen(
+            service: service,
+            pickup: pickup,
+            destination: destination,
+          );
+        },
       ),
     );
   }

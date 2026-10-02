@@ -1,0 +1,118 @@
+import 'package:flutter/material.dart';
+import 'booking_store.dart';
+
+class BookingsScreen extends StatelessWidget {
+  const BookingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: ValueListenableBuilder<List<TripBooking>>(
+            valueListenable: BookingStore.bookings,
+            builder: (context, bookings, _) {
+              return ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  const Text(
+                    'My bookings',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Demo bookings only. They clear when '
+                    'the app restarts.',
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 24),
+                  if (bookings.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.calendar_month_outlined,
+                            size: 64,
+                            color: Colors.teal,
+                          ),
+                          SizedBox(height: 16),
+                          Text('No bookings yet'),
+                          SizedBox(height: 8),
+                          Text('Plan a trip from the Home tab.'),
+                        ],
+                      ),
+                    ),
+                  for (final booking in bookings) BookingCard(booking: booking),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BookingCard extends StatelessWidget {
+  const BookingCard({super.key, required this.booking});
+
+  final TripBooking booking;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = MaterialLocalizations.of(
+      context,
+    ).formatMediumDate(booking.departure);
+
+    final time = TimeOfDay.fromDateTime(booking.departure).format(context);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.route, color: Colors.teal),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Demo booking saved',
+                    style: TextStyle(
+                      color: Colors.teal,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${booking.pickup} → ${booking.destination}',
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+            ),
+            if (booking.stops.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Stops: ${booking.stops.join(' → ')}'),
+            ],
+            const SizedBox(height: 12),
+            Text('Departure: $date at $time'),
+            const SizedBox(height: 8),
+            Text('Vehicle: ${booking.vehicle}'),
+            const SizedBox(height: 8),
+            Text('Passengers: ${booking.passengers}'),
+            const SizedBox(height: 12),
+            const Text(
+              'No driver has been assigned.',
+              style: TextStyle(color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
