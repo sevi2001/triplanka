@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'booking_store.dart';
+import 'location_picker_screen.dart';
 import 'vehicle_selection_screen.dart';
 
 class FullDayDriverScreen extends StatefulWidget {
@@ -6,10 +9,14 @@ class FullDayDriverScreen extends StatefulWidget {
     super.key,
     this.pickup = '',
     this.destination = '',
+    this.pickupCoordinates,
+    this.destinationCoordinates,
   });
 
   final String pickup;
   final String destination;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
   State<FullDayDriverScreen> createState() => _FullDayDriverScreenState();
@@ -20,6 +27,9 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
 
   late final TextEditingController pickupController;
   late final TextEditingController placesController;
+
+  TripCoordinates? pickupCoordinates;
+  TripCoordinates? lastPlaceCoordinates;
 
   DateTime? travelDate;
   TimeOfDay? startTime;
@@ -39,8 +49,13 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
     super.initState();
 
     pickupController = TextEditingController(text: widget.pickup);
-
     placesController = TextEditingController(text: widget.destination);
+
+    pickupCoordinates = widget.pickupCoordinates;
+
+    if (readPlaces(widget.destination).length == 1) {
+      lastPlaceCoordinates = widget.destinationCoordinates;
+    }
   }
 
   @override
@@ -54,6 +69,53 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  List<String> readPlaces(String text) {
+    return text
+        .split('\n')
+        .map((place) => place.trim())
+        .where((place) => place.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> searchLocation({required bool isPickup}) async {
+    FocusScope.of(context).unfocus();
+
+    final selected = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => LocationPickerScreen(
+          title: isPickup ? 'Find pickup' : 'Find last place to visit',
+          confirmLabel: isPickup ? 'Use this pickup' : 'Use as last place',
+        ),
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+
+    final coordinates = TripCoordinates(
+      latitude: selected.point.latitude,
+      longitude: selected.point.longitude,
+    );
+
+    setState(() {
+      if (isPickup) {
+        pickupController.text = selected.name;
+        pickupCoordinates = coordinates;
+      } else {
+        final places = readPlaces(placesController.text);
+
+        // Replace the last place while keeping earlier places.
+        if (places.isEmpty) {
+          places.add(selected.name);
+        } else {
+          places[places.length - 1] = selected.name;
+        }
+
+        placesController.text = places.join('\n');
+        lastPlaceCoordinates = coordinates;
+      }
+    });
   }
 
   Future<void> chooseDate() async {
@@ -89,14 +151,6 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
     });
   }
 
-  List<String> readPlaces(String text) {
-    return text
-        .split('\n')
-        .map((place) => place.trim())
-        .where((place) => place.isNotEmpty)
-        .toList();
-  }
-
   void continueBooking() {
     FocusScope.of(context).unfocus();
 
@@ -127,9 +181,10 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
     final places = readPlaces(placesController.text);
     final package = packages[packageIndex];
 
-    // For a return journey, every visited place is a stop.
-    // Otherwise, the last place is the final destination.
     final destination = returnToPickup ? pickup : places.last;
+    final destinationCoordinates = returnToPickup
+        ? pickupCoordinates
+        : lastPlaceCoordinates;
 
     final stops = returnToPickup
         ? places
@@ -148,11 +203,25 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
         builder: (_) => VehicleSelectionScreen(
           pickup: pickup,
           destination: destination,
+          pickupCoordinates: pickupCoordinates,
+          destinationCoordinates: destinationCoordinates,
           stops: stops,
           departure: departure,
           passengers: passengers,
           notes: notes,
         ),
+      ),
+    );
+  }
+
+  Widget coordinateLabel(TripCoordinates coordinates) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        'Map location selected: '
+        '${coordinates.latitude.toStringAsFixed(5)}, '
+        '${coordinates.longitude.toStringAsFixed(5)}',
+        style: const TextStyle(color: Colors.teal, fontSize: 12),
       ),
     );
   }
@@ -166,6 +235,9 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
     final timeLabel = startTime == null
         ? 'Choose time'
         : startTime!.format(context);
+
+    final selectedPickup = pickupCoordinates;
+    final selectedLastPlace = lastPlaceCoordinates;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Full-day driver')),
@@ -196,6 +268,14 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: pickupController,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    onChanged: (_) {
+                      if (pickupCoordinates == null) return;
+
+                      setState(() {
+                        pickupCoordinates = null;
+                      });
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Pickup location',
                       prefixIcon: Icon(Icons.my_location, color: Colors.teal),
@@ -205,15 +285,30 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
                       if (value == null || value.trim().isEmpty) {
                         return 'Enter a pickup location';
                       }
+
                       return null;
                     },
                   ),
+                  TextButton.icon(
+                    onPressed: () => searchLocation(isPickup: true),
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search pickup'),
+                  ),
+                  if (selectedPickup != null) coordinateLabel(selectedPickup),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: placesController,
                     minLines: 3,
                     maxLines: 6,
                     keyboardType: TextInputType.multiline,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    onChanged: (_) {
+                      if (lastPlaceCoordinates == null) return;
+
+                      setState(() {
+                        lastPlaceCoordinates = null;
+                      });
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Places to visit',
                       hintText: 'Kandy\nPeradeniya\nNuwara Eliya',
@@ -225,9 +320,24 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
                       if (readPlaces(value ?? '').isEmpty) {
                         return 'Enter at least one place';
                       }
+
                       return null;
                     },
                   ),
+                  TextButton.icon(
+                    onPressed: () => searchLocation(isPickup: false),
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search last place to visit'),
+                  ),
+                  const Text(
+                    'Search replaces the last line and keeps earlier places. '
+                    'Add earlier places first, then search the last place.',
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  if (selectedLastPlace != null) ...[
+                    const SizedBox(height: 8),
+                    coordinateLabel(selectedLastPlace),
+                  ],
                   const SizedBox(height: 16),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -239,6 +349,15 @@ class _FullDayDriverScreenState extends State<FullDayDriverScreen> {
                         returnToPickup = value;
                       });
                     },
+                  ),
+                  Text(
+                    returnToPickup
+                        ? 'The saved map shows your shared pickup and '
+                              'return point. Visit stops are not mapped yet.'
+                        : 'The last place becomes your final destination. '
+                              'Search both pickup and the last place '
+                              'to enable the saved trip map.',
+                    style: const TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 16),
                   const Text(

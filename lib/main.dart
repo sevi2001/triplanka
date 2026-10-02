@@ -233,6 +233,8 @@ class _HomeScreenState extends State<HomeScreen> {
             return FullDayDriverScreen(
               pickup: pickup,
               destination: destination,
+              pickupCoordinates: selectedPickupCoordinates,
+              destinationCoordinates: selectedDestinationCoordinates,
             );
           }
           return BookingScreen(
