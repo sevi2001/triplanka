@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'booking_store.dart';
 
 class VehicleOption {
@@ -23,6 +24,8 @@ class VehicleSelectionScreen extends StatefulWidget {
     required this.passengers,
     this.notes = '',
     this.isInstantRide = false,
+    this.pickupCoordinates,
+    this.destinationCoordinates,
   });
 
   final String pickup;
@@ -32,48 +35,37 @@ class VehicleSelectionScreen extends StatefulWidget {
   final int passengers;
   final String notes;
   final bool isInstantRide;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
-  State<VehicleSelectionScreen> createState() =>
-      _VehicleSelectionScreenState();
+  State<VehicleSelectionScreen> createState() => _VehicleSelectionScreenState();
 }
 
-class _VehicleSelectionScreenState
-    extends State<VehicleSelectionScreen> {
+class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
   static const vehicles = [
-    VehicleOption(
-      name: 'Tuk-tuk',
-      capacity: 3,
-      icon: Icons.electric_rickshaw,
-    ),
-    VehicleOption(
-      name: 'Car',
-      capacity: 4,
-      icon: Icons.directions_car,
-    ),
-    VehicleOption(
-      name: 'Van',
-      capacity: 8,
-      icon: Icons.airport_shuttle,
-    ),
-    VehicleOption(
-      name: 'Minibus',
-      capacity: 15,
-      icon: Icons.directions_bus,
-    ),
+    VehicleOption(name: 'Tuk-tuk', capacity: 3, icon: Icons.electric_rickshaw),
+    VehicleOption(name: 'Car', capacity: 4, icon: Icons.directions_car),
+    VehicleOption(name: 'Van', capacity: 8, icon: Icons.airport_shuttle),
+    VehicleOption(name: 'Minibus', capacity: 15, icon: Icons.directions_bus),
   ];
 
   VehicleOption? selectedVehicle;
 
   void reviewTrip() {
     final vehicle = selectedVehicle;
-    if (vehicle == null) return;
+
+    if (vehicle == null || vehicle.capacity < widget.passengers) {
+      return;
+    }
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TripReviewScreen(
           pickup: widget.pickup,
           destination: widget.destination,
+          pickupCoordinates: widget.pickupCoordinates,
+          destinationCoordinates: widget.destinationCoordinates,
           stops: widget.stops,
           departure: widget.departure,
           passengers: widget.passengers,
@@ -120,8 +112,8 @@ class _VehicleSelectionScreenState
           selected
               ? Icons.check_circle
               : fits
-                  ? Icons.radio_button_unchecked
-                  : Icons.block,
+              ? Icons.radio_button_unchecked
+              : Icons.block,
           color: fits ? Colors.teal : Colors.grey,
         ),
         onTap: fits
@@ -148,16 +140,10 @@ class _VehicleSelectionScreenState
               children: [
                 const Text(
                   'Travel comfortably',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Choose a vehicle for '
-                  '${widget.passengers} passengers.',
-                ),
+                Text('Choose a vehicle for ${widget.passengers} passengers.'),
                 const SizedBox(height: 8),
                 const Text(
                   'Sample vehicle capacities. '
@@ -166,12 +152,10 @@ class _VehicleSelectionScreenState
                   style: TextStyle(color: Colors.black54),
                 ),
                 const SizedBox(height: 24),
-                for (final vehicle in vehicles)
-                  buildVehicleCard(vehicle),
+                for (final vehicle in vehicles) buildVehicleCard(vehicle),
                 const SizedBox(height: 24),
                 FilledButton(
-                  onPressed:
-                      selectedVehicle == null ? null : reviewTrip,
+                  onPressed: selectedVehicle == null ? null : reviewTrip,
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 18),
                   ),
@@ -197,6 +181,8 @@ class TripReviewScreen extends StatefulWidget {
     required this.vehicle,
     this.notes = '',
     this.isInstantRide = false,
+    this.pickupCoordinates,
+    this.destinationCoordinates,
   });
 
   final String pickup;
@@ -207,10 +193,11 @@ class TripReviewScreen extends StatefulWidget {
   final VehicleOption vehicle;
   final String notes;
   final bool isInstantRide;
+  final TripCoordinates? pickupCoordinates;
+  final TripCoordinates? destinationCoordinates;
 
   @override
-  State<TripReviewScreen> createState() =>
-      _TripReviewScreenState();
+  State<TripReviewScreen> createState() => _TripReviewScreenState();
 }
 
 class _TripReviewScreenState extends State<TripReviewScreen> {
@@ -220,9 +207,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
   Future<void> confirmBooking() async {
     if (saved || saving) return;
 
-    // Instant rides do not require a future departure.
-    if (!widget.isInstantRide &&
-        !widget.departure.isAfter(DateTime.now())) {
+    if (!widget.isInstantRide && !widget.departure.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -243,10 +228,10 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
         TripBooking(
           pickup: widget.pickup,
           destination: widget.destination,
+          pickupCoordinates: widget.pickupCoordinates,
+          destinationCoordinates: widget.destinationCoordinates,
           stops: widget.stops,
-          departure: widget.isInstantRide
-              ? DateTime.now()
-              : widget.departure,
+          departure: widget.isInstantRide ? DateTime.now() : widget.departure,
           passengers: widget.passengers,
           vehicle: widget.vehicle.name,
           notes: widget.notes,
@@ -265,9 +250,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Could not save your booking. Please try again.',
-          ),
+          content: Text('Could not save your booking. Please try again.'),
         ),
       );
     } finally {
@@ -289,18 +272,31 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
     );
   }
 
+  Widget locationDetail({
+    required String title,
+    required String name,
+    required IconData icon,
+    required TripCoordinates? coordinates,
+  }) {
+    final value = coordinates == null
+        ? name
+        : '$name\n'
+              'Latitude: ${coordinates.latitude.toStringAsFixed(5)}\n'
+              'Longitude: ${coordinates.longitude.toStringAsFixed(5)}';
+
+    return detail(title, value, icon);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final date = MaterialLocalizations.of(context)
-        .formatMediumDate(widget.departure);
+    final date = MaterialLocalizations.of(
+      context,
+    ).formatMediumDate(widget.departure);
 
-    final time = TimeOfDay.fromDateTime(widget.departure)
-        .format(context);
+    final time = TimeOfDay.fromDateTime(widget.departure).format(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(saved ? 'Booking saved' : 'Review trip'),
-      ),
+      appBar: AppBar(title: Text(saved ? 'Booking saved' : 'Review trip')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -309,19 +305,12 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 if (saved) ...[
-                  const Icon(
-                    Icons.check_circle,
-                    size: 72,
-                    color: Colors.teal,
-                  ),
+                  const Icon(Icons.check_circle, size: 72, color: Colors.teal),
                   const SizedBox(height: 16),
                   const Text(
                     'Demo booking saved!',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
                   const Text(
@@ -332,53 +321,34 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 ] else
                   const Text(
                     'Your journey',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                   ),
                 const SizedBox(height: 20),
-                detail(
-                  'Pickup',
-                  widget.pickup,
-                  Icons.my_location,
+                locationDetail(
+                  title: 'Pickup',
+                  name: widget.pickup,
+                  icon: Icons.my_location,
+                  coordinates: widget.pickupCoordinates,
                 ),
                 if (widget.stops.isNotEmpty)
-                  detail(
-                    'Stops',
-                    widget.stops.join(' → '),
-                    Icons.route,
-                  ),
-                detail(
-                  'Destination',
-                  widget.destination,
-                  Icons.location_on,
+                  detail('Stops', widget.stops.join(' → '), Icons.route),
+                locationDetail(
+                  title: 'Destination',
+                  name: widget.destination,
+                  icon: Icons.location_on,
+                  coordinates: widget.destinationCoordinates,
                 ),
                 detail(
-                  widget.isInstantRide
-                      ? 'Pickup request'
-                      : 'Departure',
+                  widget.isInstantRide ? 'Pickup request' : 'Departure',
                   widget.isInstantRide ? 'Now' : '$date at $time',
                   widget.isInstantRide
                       ? Icons.local_taxi
                       : Icons.calendar_month,
                 ),
-                detail(
-                  'Passengers',
-                  '${widget.passengers}',
-                  Icons.people,
-                ),
-                detail(
-                  'Vehicle',
-                  widget.vehicle.name,
-                  widget.vehicle.icon,
-                ),
+                detail('Passengers', '${widget.passengers}', Icons.people),
+                detail('Vehicle', widget.vehicle.name, widget.vehicle.icon),
                 if (widget.notes.isNotEmpty)
-                  detail(
-                    'Additional details',
-                    widget.notes,
-                    Icons.notes,
-                  ),
+                  detail('Additional details', widget.notes, Icons.notes),
                 const SizedBox(height: 20),
                 const Text(
                   'Demo only: no payment is taken and no driver '
@@ -392,9 +362,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 18),
                     ),
-                    child: Text(
-                      saving ? 'Saving...' : 'Confirm demo booking',
-                    ),
+                    child: Text(saving ? 'Saving...' : 'Confirm demo booking'),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
@@ -406,9 +374,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 ] else
                   FilledButton(
                     onPressed: () {
-                      Navigator.of(context).popUntil(
-                        (route) => route.isFirst,
-                      );
+                      Navigator.of(context).popUntil((route) => route.isFirst);
                     },
                     child: const Text('Return to Home'),
                   ),
