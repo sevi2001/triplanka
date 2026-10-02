@@ -14,7 +14,14 @@ class SelectedLocation {
 }
 
 class LocationPickerScreen extends StatefulWidget {
-  const LocationPickerScreen({super.key});
+  const LocationPickerScreen({
+    super.key,
+    this.title = 'Find pickup',
+    this.confirmLabel = 'Use this pickup',
+  });
+
+  final String title;
+  final String confirmLabel;
 
   @override
   State<LocationPickerScreen> createState() => _LocationPickerScreenState();
@@ -166,7 +173,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     final selected = selectedLocation;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Find pickup')),
+      appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
         child: Column(
           children: [
@@ -286,7 +293,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               child: Column(
                 children: [
                   Text(
-                    selected?.name ?? 'Search and choose a pickup.',
+                    selected?.name ?? 'Search and choose a place.',
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -302,7 +309,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                                 context,
                               ).pop<SelectedLocation>(selected);
                             },
-                      child: const Text('Use this pickup'),
+                      child: Text(widget.confirmLabel),
                     ),
                   ),
                 ],

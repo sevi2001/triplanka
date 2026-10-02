@@ -5,10 +5,10 @@ import 'booking_store.dart';
 import 'bookings_screen.dart';
 import 'full_day_driver_screen.dart';
 import 'home_map.dart';
+import 'location_picker_screen.dart';
 import 'plan_trip_screen.dart';
 import 'profile_screen.dart';
 import 'ride_now_screen.dart';
-import 'location_picker_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,13 +136,31 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> selectPickupOnMap() async {
     final location = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
-        builder: (_) => const LocationPickerScreen(),
+        builder: (_) => const LocationPickerScreen(
+          title: 'Find pickup',
+          confirmLabel: 'Use this pickup',
+        ),
       ),
     );
 
     if (!mounted || location == null) return;
 
     pickupController.text = location.name;
+  }
+
+  Future<void> selectDestinationOnMap() async {
+    final location = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => const LocationPickerScreen(
+          title: 'Find destination',
+          confirmLabel: 'Use this destination',
+        ),
+      ),
+    );
+
+    if (!mounted || location == null) return;
+
+    destinationController.text = location.name;
   }
 
   void openBooking(String service) {
@@ -244,8 +262,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   onPressed: selectPickupOnMap,
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('Select pickup on map'),
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search pickup'),
                 ),
               ),
               const SizedBox(height: 14),
@@ -253,6 +271,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Destination',
                 icon: Icons.location_on,
                 controller: destinationController,
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: selectDestinationOnMap,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search destination'),
+                ),
               ),
               const SizedBox(height: 24),
               const Text(
