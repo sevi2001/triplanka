@@ -21,6 +21,7 @@ class VehicleSelectionScreen extends StatefulWidget {
     required this.stops,
     required this.departure,
     required this.passengers,
+    this.notes = '',
   });
 
   final String pickup;
@@ -28,6 +29,7 @@ class VehicleSelectionScreen extends StatefulWidget {
   final List<String> stops;
   final DateTime departure;
   final int passengers;
+  final String notes;
 
   @override
   State<VehicleSelectionScreen> createState() => _VehicleSelectionScreenState();
@@ -56,6 +58,7 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
           departure: widget.departure,
           passengers: widget.passengers,
           vehicle: vehicle,
+          notes: widget.notes,
         ),
       ),
     );
@@ -134,7 +137,8 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Sample vehicle capacities. '
-                  'Driver availability is not connected yet.',
+                  'Driver availability is not connected yet. '
+                  'Luggage capacity must be confirmed separately.',
                   style: TextStyle(color: Colors.black54),
                 ),
                 const SizedBox(height: 24),
@@ -165,6 +169,7 @@ class TripReviewScreen extends StatefulWidget {
     required this.departure,
     required this.passengers,
     required this.vehicle,
+    this.notes = '',
   });
 
   final String pickup;
@@ -173,6 +178,7 @@ class TripReviewScreen extends StatefulWidget {
   final DateTime departure;
   final int passengers;
   final VehicleOption vehicle;
+  final String notes;
 
   @override
   State<TripReviewScreen> createState() => _TripReviewScreenState();
@@ -210,6 +216,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
           departure: widget.departure,
           passengers: widget.passengers,
           vehicle: widget.vehicle.name,
+          notes: widget.notes,
         ),
       );
 
@@ -289,6 +296,8 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 detail('Departure', '$date at $time', Icons.calendar_month),
                 detail('Passengers', '${widget.passengers}', Icons.people),
                 detail('Vehicle', widget.vehicle.name, widget.vehicle.icon),
+                if (widget.notes.isNotEmpty)
+                  detail('Transfer details', widget.notes, Icons.notes),
                 const SizedBox(height: 20),
                 const Text(
                   'Demo only: no payment is taken and no driver '

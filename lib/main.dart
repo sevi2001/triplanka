@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'plan_trip_screen.dart';
 import 'bookings_screen.dart';
 import 'booking_store.dart';
+import 'airport_transfer_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,6 +126,13 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) {
           if (service == 'Plan a trip') {
             return PlanTripScreen(pickup: pickup, destination: destination);
+          }
+
+          if (service == 'Airport transfer') {
+            return AirportTransferScreen(
+              pickup: pickup,
+              destination: destination,
+            );
           }
 
           return BookingScreen(

@@ -104,6 +104,26 @@ class BookingCard extends StatelessWidget {
             Text('Vehicle: ${booking.vehicle}'),
             const SizedBox(height: 8),
             Text('Passengers: ${booking.passengers}'),
+
+            // Show flight, luggage, and other saved notes.
+            if (booking.notes.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  Icon(Icons.notes, color: Colors.teal, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Additional details',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(booking.notes),
+            ],
+
             const SizedBox(height: 12),
             const Text(
               'No driver has been assigned.',

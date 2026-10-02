@@ -11,6 +11,7 @@ class TripBooking {
     required this.departure,
     required this.passengers,
     required this.vehicle,
+    this.notes = '',
   }) : stops = List.unmodifiable(stops);
 
   final String pickup;
@@ -19,6 +20,7 @@ class TripBooking {
   final DateTime departure;
   final int passengers;
   final String vehicle;
+  final String notes;
 
   Map<String, dynamic> toJson() {
     return {
@@ -28,6 +30,7 @@ class TripBooking {
       'departure': departure.toIso8601String(),
       'passengers': passengers,
       'vehicle': vehicle,
+      'notes': notes,
     };
   }
 
@@ -39,6 +42,7 @@ class TripBooking {
       departure: DateTime.parse(json['departure'] as String),
       passengers: json['passengers'] as int,
       vehicle: json['vehicle'] as String,
+      notes: json['notes'] as String? ?? '',
     );
   }
 }
