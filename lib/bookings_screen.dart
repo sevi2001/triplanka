@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'booking_store.dart';
+import 'split_cost_screen.dart';
 
 class BookingsScreen extends StatelessWidget {
   const BookingsScreen({super.key});
@@ -128,6 +129,19 @@ class BookingCard extends StatelessWidget {
             const Text(
               'No driver has been assigned.',
               style: TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        SplitCostScreen(passengers: booking.passengers),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.groups),
+              label: const Text('Split the cost'),
             ),
           ],
         ),
