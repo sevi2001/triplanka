@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'booking_store.dart';
 import 'split_cost_screen.dart';
+import 'trip_map_screen.dart';
 
 class BookingsScreen extends StatelessWidget {
   const BookingsScreen({super.key});
@@ -106,7 +107,7 @@ class BookingCard extends StatelessWidget {
     } catch (_) {
       if (!context.mounted) return;
 
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Trip details'),
@@ -122,6 +123,20 @@ class BookingCard extends StatelessWidget {
     }
   }
 
+  void openTripMap(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => TripMapScreen(booking: booking)),
+    );
+  }
+
+  void openSplitCost(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SplitCostScreen(passengers: booking.passengers),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final date = MaterialLocalizations.of(
@@ -129,6 +144,10 @@ class BookingCard extends StatelessWidget {
     ).formatMediumDate(booking.departure);
 
     final time = TimeOfDay.fromDateTime(booking.departure).format(context);
+
+    final hasMapLocations =
+        booking.pickupCoordinates != null &&
+        booking.destinationCoordinates != null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -190,15 +209,16 @@ class BookingCard extends StatelessWidget {
               style: TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 16),
+            if (hasMapLocations) ...[
+              OutlinedButton.icon(
+                onPressed: () => openTripMap(context),
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('View trip map'),
+              ),
+              const SizedBox(height: 8),
+            ],
             OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        SplitCostScreen(passengers: booking.passengers),
-                  ),
-                );
-              },
+              onPressed: () => openSplitCost(context),
               icon: const Icon(Icons.groups),
               label: const Text('Split the cost'),
             ),
