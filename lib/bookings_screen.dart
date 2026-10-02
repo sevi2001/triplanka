@@ -22,8 +22,7 @@ class BookingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Demo bookings only. They clear when '
-                    'the app restarts.',
+                    'Demo bookings saved on this device.',
                     style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 24),

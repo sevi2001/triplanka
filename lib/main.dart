@@ -1,9 +1,35 @@
 import 'package:flutter/material.dart';
 import 'plan_trip_screen.dart';
 import 'bookings_screen.dart';
+import 'booking_store.dart';
 
-void main() {
-  runApp(const TripLankaApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await BookingStore.load();
+    runApp(const TripLankaApp());
+  } catch (_) {
+    runApp(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Could not load saved bookings. '
+                  'Please restart the app and try again.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class TripLankaApp extends StatelessWidget {
@@ -42,7 +68,7 @@ class _MainScreenState extends State<MainScreen> {
         children: const [
           HomeScreen(),
           BookingsScreen(),
-          Center(child: Text('Your profile')),
+          SafeArea(child: Center(child: Text('Your profile'))),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -274,30 +300,40 @@ class BookingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(service)),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text(
-            'Journey details',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                const Text(
+                  'Journey details',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 20),
+                ListTile(
+                  leading: const Icon(Icons.my_location),
+                  title: const Text('Pickup'),
+                  subtitle: Text(pickup.isEmpty ? 'Not selected' : pickup),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.location_on),
+                  title: const Text('Destination'),
+                  subtitle: Text(
+                    destination.isEmpty ? 'Not selected' : destination,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'This service form will be added later. '
+                  'Use Plan a trip on Home to create '
+                  'a demo booking now.',
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
-          ListTile(
-            leading: const Icon(Icons.my_location),
-            title: const Text('Pickup'),
-            subtitle: Text(pickup.isEmpty ? 'Not selected' : pickup),
-          ),
-          ListTile(
-            leading: const Icon(Icons.location_on),
-            title: const Text('Destination'),
-            subtitle: Text(destination.isEmpty ? 'Not selected' : destination),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Booking form coming next: date, time, '
-            'passengers, stops, and vehicle selection.',
-          ),
-        ],
+        ),
       ),
     );
   }

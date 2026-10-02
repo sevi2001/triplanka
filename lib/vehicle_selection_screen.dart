@@ -180,9 +180,10 @@ class TripReviewScreen extends StatefulWidget {
 
 class _TripReviewScreenState extends State<TripReviewScreen> {
   bool saved = false;
+  bool saving = false;
 
-  void confirmBooking() {
-    if (saved) return;
+  Future<void> confirmBooking() async {
+    if (saved || saving) return;
 
     if (!widget.departure.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -196,20 +197,42 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
       return;
     }
 
-    BookingStore.add(
-      TripBooking(
-        pickup: widget.pickup,
-        destination: widget.destination,
-        stops: widget.stops,
-        departure: widget.departure,
-        passengers: widget.passengers,
-        vehicle: widget.vehicle.name,
-      ),
-    );
-
     setState(() {
-      saved = true;
+      saving = true;
     });
+
+    try {
+      await BookingStore.add(
+        TripBooking(
+          pickup: widget.pickup,
+          destination: widget.destination,
+          stops: widget.stops,
+          departure: widget.departure,
+          passengers: widget.passengers,
+          vehicle: widget.vehicle.name,
+        ),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        saved = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save your booking. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          saving = false;
+        });
+      }
+    }
   }
 
   Widget detail(String title, String value, IconData icon) {
@@ -268,23 +291,24 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 detail('Vehicle', widget.vehicle.name, widget.vehicle.icon),
                 const SizedBox(height: 20),
                 const Text(
-                  'Demo only: no payment is taken and no '
-                  'driver is contacted. This booking clears '
-                  'when the app restarts.',
+                  'Demo only: no payment is taken and no driver '
+                  'is contacted. Bookings are saved on this device.',
                   style: TextStyle(color: Colors.black54),
                 ),
                 const SizedBox(height: 24),
                 if (!saved) ...[
                   FilledButton(
-                    onPressed: confirmBooking,
+                    onPressed: saving ? null : confirmBooking,
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 18),
                     ),
-                    child: const Text('Confirm demo booking'),
+                    child: Text(saving ? 'Saving...' : 'Confirm demo booking'),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: const Text('Change vehicle'),
                   ),
                 ] else
