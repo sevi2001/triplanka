@@ -1,8 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'airport_transfer_screen.dart';
 import 'booking_store.dart';
 import 'bookings_screen.dart';
+import 'firebase_options.dart';
 import 'full_day_driver_screen.dart';
 import 'home_map.dart';
 import 'location_picker_screen.dart';
@@ -14,24 +17,28 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
     await BookingStore.load();
+
     runApp(const TripLankaApp());
   } catch (error) {
-    debugPrint('Booking load failed: $error');
+    debugPrint('App startup failed: $error');
 
     runApp(
       const MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Could not load saved bookings. '
-                  'Please restart the app and try again.',
-                  textAlign: TextAlign.center,
-                ),
+          body: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Could not start TripLanka. '
+                'Check your connection and Firebase configuration, '
+                'then restart the app.',
+                textAlign: TextAlign.center,
               ),
             ),
           ),
@@ -42,9 +49,16 @@ Future<void> main() async {
 }
 
 class TripLankaApp extends StatelessWidget {
-  const TripLankaApp({super.key, this.loadMapTiles = true});
+  const TripLankaApp({
+    super.key,
+    this.loadMapTiles = true,
+    this.useAuthentication = true,
+  });
 
   final bool loadMapTiles;
+
+  // Set false only in tests that check the existing Home screen.
+  final bool useAuthentication;
 
   @override
   Widget build(BuildContext context) {
@@ -56,15 +70,358 @@ class TripLankaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         scaffoldBackgroundColor: const Color(0xFFF5F7FA),
       ),
-      home: MainScreen(loadMapTiles: loadMapTiles),
+      home: useAuthentication
+          ? AuthGate(loadMapTiles: loadMapTiles)
+          : MainScreen(loadMapTiles: loadMapTiles),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key, required this.loadMapTiles});
+
+  final bool loadMapTiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: Center(
+              child: Text('Could not check your login. Restart the app.'),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+
+        if (user == null) {
+          return const LoginScreen();
+        }
+
+        return MainScreen(
+          key: ValueKey(user.uid),
+          loadMapTiles: loadMapTiles,
+          showAccount: true,
+        );
+      },
+    );
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final formKey = GlobalKey<FormState>();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+
+  bool creatingAccount = false;
+  bool busy = false;
+  bool hidePassword = true;
+
+  String? message;
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  String? validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+
+    if (email.isEmpty) return 'Enter your email address';
+
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'Enter a valid email address';
+    }
+
+    return null;
+  }
+
+  String authError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'invalid-email':
+        return 'Enter a valid email address.';
+      case 'email-already-in-use':
+        return 'An account already uses this email. Try signing in.';
+      case 'weak-password':
+        return 'Choose a stronger password.';
+      case 'invalid-credential':
+      case 'wrong-password':
+      case 'user-not-found':
+        return 'Could not sign in. Check your email and password.';
+      case 'user-disabled':
+        return 'This account is disabled.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'Check your internet connection and try again.';
+      case 'operation-not-allowed':
+        return 'Enable Email/Password in Firebase Authentication.';
+      default:
+        return 'Could not complete the request. Please try again.';
+    }
+  }
+
+  Future<void> submit() async {
+    if (busy || !formKey.currentState!.validate()) return;
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      busy = true;
+      message = null;
+    });
+
+    try {
+      final email = emailController.text.trim();
+      final password = passwordController.text;
+
+      if (creatingAccount) {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } else {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
+
+      // AuthGate opens Home when authentication succeeds.
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        message = authError(error);
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        message = 'Could not complete the request. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> resetPassword() async {
+    if (busy) return;
+
+    final emailError = validateEmail(emailController.text);
+
+    if (emailError != null) {
+      setState(() {
+        message = emailError;
+      });
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      busy = true;
+      message = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: emailController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        message =
+            'If an account uses this email, check your inbox '
+            'and spam folder for a password reset link.';
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        message = authError(error);
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        message = 'Could not request a reset. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          busy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: Form(
+              key: formKey,
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(24),
+                children: [
+                  const Icon(Icons.explore, size: 64, color: Colors.teal),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'TripLanka',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.teal,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    creatingAccount ? 'Create your account' : 'Welcome back',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: emailController,
+                    enabled: !busy,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    validator: validateEmail,
+                    decoration: const InputDecoration(
+                      labelText: 'Email address',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: passwordController,
+                    enabled: !busy,
+                    obscureText: hidePassword,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onFieldSubmitted: (_) => submit(),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Enter your password';
+                      }
+
+                      if (creatingAccount && value.length < 6) {
+                        return 'Use at least 6 characters';
+                      }
+
+                      return null;
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        tooltip: hidePassword
+                            ? 'Show password'
+                            : 'Hide password',
+                        onPressed: busy
+                            ? null
+                            : () {
+                                setState(() {
+                                  hidePassword = !hidePassword;
+                                });
+                              },
+                        icon: Icon(
+                          hidePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (message != null) ...[
+                    const SizedBox(height: 16),
+                    Text(message!),
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: busy ? null : submit,
+                    child: Text(
+                      busy
+                          ? 'Please wait...'
+                          : creatingAccount
+                          ? 'Create account'
+                          : 'Sign in',
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: busy
+                        ? null
+                        : () {
+                            setState(() {
+                              creatingAccount = !creatingAccount;
+                              passwordController.clear();
+                              message = null;
+                              formKey.currentState?.reset();
+                            });
+                          },
+                    child: Text(
+                      creatingAccount
+                          ? 'Already have an account? Sign in'
+                          : 'New to TripLanka? Create an account',
+                    ),
+                  ),
+                  if (!creatingAccount)
+                    TextButton(
+                      onPressed: busy ? null : resetPassword,
+                      child: const Text('Forgot password?'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key, this.loadMapTiles = true});
+  const MainScreen({
+    super.key,
+    this.loadMapTiles = true,
+    this.showAccount = false,
+  });
 
   final bool loadMapTiles;
+  final bool showAccount;
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -72,10 +429,47 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
+  bool signingOut = false;
+
+  Future<void> signOut() async {
+    if (signingOut) return;
+
+    setState(() {
+      signingOut = true;
+    });
+
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not sign out. Please try again.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          signingOut = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.showAccount
+          ? AppBar(
+              title: const Text('TripLanka'),
+              actions: [
+                TextButton.icon(
+                  onPressed: signingOut ? null : signOut,
+                  icon: const Icon(Icons.logout),
+                  label: Text(signingOut ? 'Signing out...' : 'Sign out'),
+                ),
+              ],
+            )
+          : null,
       body: IndexedStack(
         index: selectedIndex,
         children: [
@@ -136,49 +530,33 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> selectPickupOnMap() async {
+  Future<void> searchLocation({required bool isPickup}) async {
     FocusScope.of(context).unfocus();
 
     final location = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
-        builder: (_) => const LocationPickerScreen(
-          title: 'Find pickup',
-          confirmLabel: 'Use this pickup',
+        builder: (_) => LocationPickerScreen(
+          title: isPickup ? 'Find pickup' : 'Find destination',
+          confirmLabel: isPickup ? 'Use this pickup' : 'Use this destination',
         ),
       ),
     );
 
     if (!mounted || location == null) return;
 
-    setState(() {
-      pickupController.text = location.name;
-      pickupCoordinates = TripCoordinates(
-        latitude: location.point.latitude,
-        longitude: location.point.longitude,
-      );
-    });
-  }
-
-  Future<void> selectDestinationOnMap() async {
-    FocusScope.of(context).unfocus();
-
-    final location = await Navigator.of(context).push<SelectedLocation>(
-      MaterialPageRoute<SelectedLocation>(
-        builder: (_) => const LocationPickerScreen(
-          title: 'Find destination',
-          confirmLabel: 'Use this destination',
-        ),
-      ),
+    final coordinates = TripCoordinates(
+      latitude: location.point.latitude,
+      longitude: location.point.longitude,
     );
 
-    if (!mounted || location == null) return;
-
     setState(() {
-      destinationController.text = location.name;
-      destinationCoordinates = TripCoordinates(
-        latitude: location.point.latitude,
-        longitude: location.point.longitude,
-      );
+      if (isPickup) {
+        pickupController.text = location.name;
+        pickupCoordinates = coordinates;
+      } else {
+        destinationController.text = location.name;
+        destinationCoordinates = coordinates;
+      }
     });
   }
 
@@ -187,8 +565,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
-
-    // Capture the selected coordinates for this booking.
     final selectedPickupCoordinates = pickupCoordinates;
     final selectedDestinationCoordinates = destinationCoordinates;
 
@@ -217,13 +593,6 @@ class _HomeScreenState extends State<HomeScreen> {
             return AirportTransferScreen(
               pickup: pickup,
               destination: destination,
-            );
-          }
-
-          if (service == 'Airport transfer') {
-            return AirportTransferScreen(
-              pickup: pickup,
-              destination: destination,
               pickupCoordinates: selectedPickupCoordinates,
               destinationCoordinates: selectedDestinationCoordinates,
             );
@@ -237,6 +606,7 @@ class _HomeScreenState extends State<HomeScreen> {
               destinationCoordinates: selectedDestinationCoordinates,
             );
           }
+
           return BookingScreen(
             service: service,
             pickup: pickup,
@@ -267,14 +637,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget coordinateLabel(TripCoordinates coordinates) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        'Map location selected: '
-        '${coordinates.latitude.toStringAsFixed(5)}, '
-        '${coordinates.longitude.toStringAsFixed(5)}',
-        style: const TextStyle(color: Colors.teal, fontSize: 12),
-      ),
+    return Text(
+      'Map location selected: '
+      '${coordinates.latitude.toStringAsFixed(5)}, '
+      '${coordinates.longitude.toStringAsFixed(5)}',
+      style: const TextStyle(color: Colors.teal, fontSize: 12),
     );
   }
 
@@ -330,7 +697,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: selectPickupOnMap,
+                  onPressed: () => searchLocation(isPickup: true),
                   icon: const Icon(Icons.search),
                   label: const Text('Search pickup'),
                 ),
@@ -352,7 +719,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: selectDestinationOnMap,
+                  onPressed: () => searchLocation(isPickup: false),
                   icon: const Icon(Icons.search),
                   label: const Text('Search destination'),
                 ),
@@ -458,39 +825,22 @@ class BookingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(service)),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                const Text(
-                  'Journey details',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 20),
-                ListTile(
-                  leading: const Icon(Icons.my_location),
-                  title: const Text('Pickup'),
-                  subtitle: Text(pickup.isEmpty ? 'Not selected' : pickup),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.location_on),
-                  title: const Text('Destination'),
-                  subtitle: Text(
-                    destination.isEmpty ? 'Not selected' : destination,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Choose a travel option from Home '
-                  'to create a demo booking.',
-                ),
-              ],
-            ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text(
+            'Journey details',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
-        ),
+          ListTile(
+            title: const Text('Pickup'),
+            subtitle: Text(pickup.isEmpty ? 'Not selected' : pickup),
+          ),
+          ListTile(
+            title: const Text('Destination'),
+            subtitle: Text(destination.isEmpty ? 'Not selected' : destination),
+          ),
+        ],
       ),
     );
   }

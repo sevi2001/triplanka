@@ -10,7 +10,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    // Use temporary in-memory storage instead of device storage.
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
 
@@ -18,16 +17,31 @@ void main() {
   });
 
   testWidgets('Home passes locations to trip planning form', (tester) async {
-    await tester.pumpWidget(const TripLankaApp(loadMapTiles: false));
+    await tester.pumpWidget(
+      const TripLankaApp(loadMapTiles: false, useAuthentication: false),
+    );
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).at(0), 'Colombo');
 
     await tester.enterText(find.byType(TextField).at(1), 'Ella');
 
+    // Find the Home list, excluding the other tabs.
+    final homeScrollable = find
+        .descendant(
+          of: find.byType(HomeScreen),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
     final planTripButton = find.text('Plan a trip');
 
-    await tester.ensureVisible(planTripButton);
+    // Scroll until the button is built and visible.
+    await tester.scrollUntilVisible(
+      planTripButton,
+      150,
+      scrollable: homeScrollable,
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(planTripButton);
