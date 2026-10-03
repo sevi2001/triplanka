@@ -47,7 +47,7 @@ class TripBooking {
   final TripCoordinates? pickupCoordinates;
   final TripCoordinates? destinationCoordinates;
 
-  // Each entry belongs to the stop at the same index.
+  // Each coordinate entry matches the stop at the same index.
   // Null means that stop has no selected map location.
   final List<TripCoordinates?> stopCoordinates;
 
@@ -77,6 +77,7 @@ class TripBooking {
     return TripCoordinates.fromJson(Map<String, dynamic>.from(value as Map));
   }
 
+  // Used by both local storage and CloudBookingStore.
   Map<String, dynamic> toJson() {
     return {
       'pickup': pickup,
@@ -103,7 +104,7 @@ class TripBooking {
       destination: json['destination'] as String,
       stops: stops,
       departure: DateTime.parse(json['departure'] as String),
-      passengers: json['passengers'] as int,
+      passengers: (json['passengers'] as num).toInt(),
       vehicle: json['vehicle'] as String,
       notes: json['notes'] as String? ?? '',
       pickupCoordinates: _readCoordinates(json['pickupCoordinates']),
@@ -117,7 +118,11 @@ class TripBooking {
   }
 }
 
+// Existing local demo storage.
+// Online bookings use CloudBookingStore in cloud_booking_store.dart.
 class BookingStore {
+  BookingStore._();
+
   static const storageKey = 'triplanka_demo_bookings_v1';
 
   static final preferences = SharedPreferencesAsync();
@@ -146,7 +151,7 @@ class BookingStore {
 
     final encoded = jsonEncode(updated.map((item) => item.toJson()).toList());
 
-    // Update the screen only after storage succeeds.
+    // Update the screen only after local storage succeeds.
     await preferences.setString(storageKey, encoded);
 
     bookings.value = List<TripBooking>.unmodifiable(updated);

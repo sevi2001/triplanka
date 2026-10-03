@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'booking_store.dart';
+import 'cloud_booking_store.dart';
 
 class VehicleOption {
   const VehicleOption({
@@ -237,7 +238,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
     });
 
     try {
-      await BookingStore.add(
+      await CloudBookingStore.add(
         TripBooking(
           pickup: widget.pickup,
           destination: widget.destination,
