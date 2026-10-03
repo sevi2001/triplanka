@@ -32,7 +32,9 @@ class TripBooking {
     this.notes = '',
     this.pickupCoordinates,
     this.destinationCoordinates,
-  }) : stops = List.unmodifiable(stops);
+    List<TripCoordinates?>? stopCoordinates,
+  }) : stops = List<String>.unmodifiable(stops),
+       stopCoordinates = _prepareStopCoordinates(stops.length, stopCoordinates);
 
   final String pickup;
   final String destination;
@@ -45,6 +47,36 @@ class TripBooking {
   final TripCoordinates? pickupCoordinates;
   final TripCoordinates? destinationCoordinates;
 
+  // Each entry belongs to the stop at the same index.
+  // Null means that stop has no selected map location.
+  final List<TripCoordinates?> stopCoordinates;
+
+  static List<TripCoordinates?> _prepareStopCoordinates(
+    int stopCount,
+    List<TripCoordinates?>? coordinates,
+  ) {
+    if (coordinates == null) {
+      return List<TripCoordinates?>.unmodifiable(
+        List<TripCoordinates?>.filled(stopCount, null),
+      );
+    }
+
+    if (coordinates.length != stopCount) {
+      throw ArgumentError(
+        'Each stop must have one coordinate entry. '
+        'Use null for stops without a map location.',
+      );
+    }
+
+    return List<TripCoordinates?>.unmodifiable(coordinates);
+  }
+
+  static TripCoordinates? _readCoordinates(dynamic value) {
+    if (value == null) return null;
+
+    return TripCoordinates.fromJson(Map<String, dynamic>.from(value as Map));
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'pickup': pickup,
@@ -56,31 +88,31 @@ class TripBooking {
       'notes': notes,
       'pickupCoordinates': pickupCoordinates?.toJson(),
       'destinationCoordinates': destinationCoordinates?.toJson(),
+      'stopCoordinates': stopCoordinates
+          .map((coordinates) => coordinates?.toJson())
+          .toList(),
     };
   }
 
   factory TripBooking.fromJson(Map<String, dynamic> json) {
-    final pickupData = json['pickupCoordinates'];
-    final destinationData = json['destinationCoordinates'];
+    final stops = List<String>.from(json['stops'] as List);
+    final storedStopCoordinates = json['stopCoordinates'];
 
     return TripBooking(
       pickup: json['pickup'] as String,
       destination: json['destination'] as String,
-      stops: List<String>.from(json['stops'] as List),
+      stops: stops,
       departure: DateTime.parse(json['departure'] as String),
       passengers: json['passengers'] as int,
       vehicle: json['vehicle'] as String,
       notes: json['notes'] as String? ?? '',
-      pickupCoordinates: pickupData == null
+      pickupCoordinates: _readCoordinates(json['pickupCoordinates']),
+      destinationCoordinates: _readCoordinates(json['destinationCoordinates']),
+      stopCoordinates: storedStopCoordinates == null
           ? null
-          : TripCoordinates.fromJson(
-              Map<String, dynamic>.from(pickupData as Map),
-            ),
-      destinationCoordinates: destinationData == null
-          ? null
-          : TripCoordinates.fromJson(
-              Map<String, dynamic>.from(destinationData as Map),
-            ),
+          : (storedStopCoordinates as List)
+                .map<TripCoordinates?>((value) => _readCoordinates(value))
+                .toList(),
     );
   }
 }
@@ -106,7 +138,7 @@ class BookingStore {
       return TripBooking.fromJson(Map<String, dynamic>.from(item as Map));
     }).toList();
 
-    bookings.value = List.unmodifiable(loaded);
+    bookings.value = List<TripBooking>.unmodifiable(loaded);
   }
 
   static Future<void> add(TripBooking booking) async {
@@ -117,6 +149,6 @@ class BookingStore {
     // Update the screen only after storage succeeds.
     await preferences.setString(storageKey, encoded);
 
-    bookings.value = List.unmodifiable(updated);
+    bookings.value = List<TripBooking>.unmodifiable(updated);
   }
 }

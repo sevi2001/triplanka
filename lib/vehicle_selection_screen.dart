@@ -26,7 +26,10 @@ class VehicleSelectionScreen extends StatefulWidget {
     this.isInstantRide = false,
     this.pickupCoordinates,
     this.destinationCoordinates,
-  });
+    this.stopCoordinates,
+  }) : assert(
+         stopCoordinates == null || stopCoordinates.length == stops.length,
+       );
 
   final String pickup;
   final String destination;
@@ -35,8 +38,10 @@ class VehicleSelectionScreen extends StatefulWidget {
   final int passengers;
   final String notes;
   final bool isInstantRide;
+
   final TripCoordinates? pickupCoordinates;
   final TripCoordinates? destinationCoordinates;
+  final List<TripCoordinates?>? stopCoordinates;
 
   @override
   State<VehicleSelectionScreen> createState() => _VehicleSelectionScreenState();
@@ -66,7 +71,10 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
           destination: widget.destination,
           pickupCoordinates: widget.pickupCoordinates,
           destinationCoordinates: widget.destinationCoordinates,
-          stops: widget.stops,
+          stops: List<String>.unmodifiable(widget.stops),
+          stopCoordinates: widget.stopCoordinates == null
+              ? null
+              : List<TripCoordinates?>.unmodifiable(widget.stopCoordinates!),
           departure: widget.departure,
           passengers: widget.passengers,
           vehicle: vehicle,
@@ -183,7 +191,10 @@ class TripReviewScreen extends StatefulWidget {
     this.isInstantRide = false,
     this.pickupCoordinates,
     this.destinationCoordinates,
-  });
+    this.stopCoordinates,
+  }) : assert(
+         stopCoordinates == null || stopCoordinates.length == stops.length,
+       );
 
   final String pickup;
   final String destination;
@@ -193,8 +204,10 @@ class TripReviewScreen extends StatefulWidget {
   final VehicleOption vehicle;
   final String notes;
   final bool isInstantRide;
+
   final TripCoordinates? pickupCoordinates;
   final TripCoordinates? destinationCoordinates;
+  final List<TripCoordinates?>? stopCoordinates;
 
   @override
   State<TripReviewScreen> createState() => _TripReviewScreenState();
@@ -231,6 +244,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
           pickupCoordinates: widget.pickupCoordinates,
           destinationCoordinates: widget.destinationCoordinates,
           stops: widget.stops,
+          stopCoordinates: widget.stopCoordinates,
           departure: widget.isInstantRide ? DateTime.now() : widget.departure,
           passengers: widget.passengers,
           vehicle: widget.vehicle.name,
@@ -279,12 +293,22 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
     required TripCoordinates? coordinates,
   }) {
     final value = coordinates == null
-        ? name
+        ? '$name\nMap location not selected.'
         : '$name\n'
               'Latitude: ${coordinates.latitude.toStringAsFixed(5)}\n'
               'Longitude: ${coordinates.longitude.toStringAsFixed(5)}';
 
     return detail(title, value, icon);
+  }
+
+  TripCoordinates? coordinatesForStop(int index) {
+    final coordinates = widget.stopCoordinates;
+
+    if (coordinates == null || index >= coordinates.length) {
+      return null;
+    }
+
+    return coordinates[index];
   }
 
   @override
@@ -330,8 +354,13 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                   icon: Icons.my_location,
                   coordinates: widget.pickupCoordinates,
                 ),
-                if (widget.stops.isNotEmpty)
-                  detail('Stops', widget.stops.join(' → '), Icons.route),
+                for (int i = 0; i < widget.stops.length; i++)
+                  locationDetail(
+                    title: 'Stop ${i + 1}',
+                    name: widget.stops[i],
+                    icon: Icons.place_outlined,
+                    coordinates: coordinatesForStop(i),
+                  ),
                 locationDetail(
                   title: 'Destination',
                   name: widget.destination,

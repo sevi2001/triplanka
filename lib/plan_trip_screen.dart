@@ -29,6 +29,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   late final TextEditingController destinationController;
 
   final List<TextEditingController> stopControllers = [];
+  final List<TripCoordinates?> stopCoordinates = [];
 
   TripCoordinates? pickupCoordinates;
   TripCoordinates? destinationCoordinates;
@@ -73,6 +74,13 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     return null;
   }
 
+  TripCoordinates coordinatesFor(SelectedLocation location) {
+    return TripCoordinates(
+      latitude: location.point.latitude,
+      longitude: location.point.longitude,
+    );
+  }
+
   Future<void> searchLocation({required bool isPickup}) async {
     FocusScope.of(context).unfocus();
 
@@ -87,19 +95,72 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
     if (!mounted || location == null) return;
 
-    final coordinates = TripCoordinates(
-      latitude: location.point.latitude,
-      longitude: location.point.longitude,
-    );
-
     setState(() {
       if (isPickup) {
         pickupController.text = location.name;
-        pickupCoordinates = coordinates;
+        pickupCoordinates = coordinatesFor(location);
       } else {
         destinationController.text = location.name;
-        destinationCoordinates = coordinates;
+        destinationCoordinates = coordinatesFor(location);
       }
+    });
+  }
+
+  Future<void> searchStop(TextEditingController controller) async {
+    final originalIndex = stopControllers.indexOf(controller);
+    if (originalIndex == -1) return;
+
+    FocusScope.of(context).unfocus();
+
+    final location = await Navigator.of(context).push<SelectedLocation>(
+      MaterialPageRoute<SelectedLocation>(
+        builder: (_) => LocationPickerScreen(
+          title: 'Find stop ${originalIndex + 1}',
+          confirmLabel: 'Use this stop',
+        ),
+      ),
+    );
+
+    if (!mounted || location == null) return;
+
+    // Locate the same stop again instead of relying on an old index.
+    final currentIndex = stopControllers.indexOf(controller);
+    if (currentIndex == -1) return;
+
+    setState(() {
+      controller.text = location.name;
+      stopCoordinates[currentIndex] = coordinatesFor(location);
+    });
+  }
+
+  void addStop() {
+    setState(() {
+      stopControllers.add(TextEditingController());
+      stopCoordinates.add(null);
+    });
+  }
+
+  void removeStop(TextEditingController controller) {
+    final index = stopControllers.indexOf(controller);
+    if (index == -1) return;
+
+    setState(() {
+      stopControllers.removeAt(index);
+      stopCoordinates.removeAt(index);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+  }
+
+  void clearStopCoordinates(TextEditingController controller) {
+    final index = stopControllers.indexOf(controller);
+
+    if (index == -1 || stopCoordinates[index] == null) return;
+
+    setState(() {
+      stopCoordinates[index] = null;
     });
   }
 
@@ -254,6 +315,15 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       ].join('\n');
     }
 
+    // Capture names and coordinates together in the same order.
+    final stops = stopControllers
+        .map((controller) => controller.text.trim())
+        .toList();
+
+    final selectedStopCoordinates = List<TripCoordinates?>.unmodifiable(
+      stopCoordinates,
+    );
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => VehicleSelectionScreen(
@@ -261,33 +331,14 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           destination: destination,
           pickupCoordinates: pickupCoordinates,
           destinationCoordinates: destinationCoordinates,
-          stops: stopControllers
-              .map((controller) => controller.text.trim())
-              .toList(),
+          stops: stops,
+          stopCoordinates: selectedStopCoordinates,
           departure: departure,
           passengers: passengers,
           notes: notes,
         ),
       ),
     );
-  }
-
-  void addStop() {
-    setState(() {
-      stopControllers.add(TextEditingController());
-    });
-  }
-
-  void removeStop(int index) {
-    final removed = stopControllers[index];
-
-    setState(() {
-      stopControllers.removeAt(index);
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      removed.dispose();
-    });
   }
 
   Widget locationField({
@@ -311,6 +362,18 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     );
   }
 
+  Widget coordinateLabel(TripCoordinates coordinates) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        'Map location selected: '
+        '${coordinates.latitude.toStringAsFixed(5)}, '
+        '${coordinates.longitude.toStringAsFixed(5)}',
+        style: const TextStyle(color: Colors.teal, fontSize: 12),
+      ),
+    );
+  }
+
   Widget locationSearch({
     required bool isPickup,
     required TripCoordinates? coordinates,
@@ -323,17 +386,49 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           icon: const Icon(Icons.search),
           label: Text(isPickup ? 'Search pickup' : 'Search destination'),
         ),
-        if (coordinates != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Map location selected: '
-              '${coordinates.latitude.toStringAsFixed(5)}, '
-              '${coordinates.longitude.toStringAsFixed(5)}',
-              style: const TextStyle(color: Colors.teal, fontSize: 12),
-            ),
-          ),
+        if (coordinates != null) coordinateLabel(coordinates),
       ],
+    );
+  }
+
+  Widget stopField(int index) {
+    final controller = stopControllers[index];
+    final coordinates = stopCoordinates[index];
+
+    return Padding(
+      key: ObjectKey(controller),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: locationField(
+                  controller: controller,
+                  label: 'Stop ${index + 1}',
+                  icon: Icons.place_outlined,
+                  onChanged: (_) => clearStopCoordinates(controller),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove stop ${index + 1}',
+                icon: const Icon(
+                  Icons.remove_circle_outline,
+                  color: Colors.redAccent,
+                ),
+                onPressed: () => removeStop(controller),
+              ),
+            ],
+          ),
+          TextButton.icon(
+            onPressed: () => searchStop(controller),
+            icon: const Icon(Icons.search),
+            label: Text('Search stop ${index + 1}'),
+          ),
+          if (coordinates != null) coordinateLabel(coordinates),
+        ],
+      ),
     );
   }
 
@@ -413,30 +508,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     coordinates: pickupCoordinates,
                   ),
                   const SizedBox(height: 14),
-                  for (int i = 0; i < stopControllers.length; i++)
-                    Padding(
-                      key: ObjectKey(stopControllers[i]),
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: locationField(
-                              controller: stopControllers[i],
-                              label: 'Stop ${i + 1}',
-                              icon: Icons.place_outlined,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Remove stop',
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.redAccent,
-                            ),
-                            onPressed: () => removeStop(i),
-                          ),
-                        ],
-                      ),
-                    ),
+                  for (int i = 0; i < stopControllers.length; i++) stopField(i),
                   locationField(
                     controller: destinationController,
                     label: 'Destination',
@@ -458,6 +530,11 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
                     onPressed: addStop,
                     icon: const Icon(Icons.add),
                     label: const Text('Add stop'),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Use Search for each stop you want to show on the map.',
+                    style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 20),
                   dateTimeCard(
