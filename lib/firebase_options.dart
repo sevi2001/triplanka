@@ -49,7 +49,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'triplanka-6043b.firebasestorage.app',
     measurementId: 'G-YFVL0XQPHW',
   );
-
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAkfs5nqWSf_mGNN7yz4Vh_gXGsMh0SRSA',
     appId: '1:662912161699:android:b7d5b0c323657b3ac56c16',
