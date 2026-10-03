@@ -3,8 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'booking_store.dart';
+import 'route_service.dart';
 
-class TripMapScreen extends StatelessWidget {
+class TripMapScreen extends StatefulWidget {
   const TripMapScreen({
     super.key,
     required this.booking,
@@ -14,18 +15,83 @@ class TripMapScreen extends StatelessWidget {
   final TripBooking booking;
   final bool loadMapTiles;
 
+  @override
+  State<TripMapScreen> createState() => _TripMapScreenState();
+}
+
+class _TripMapScreenState extends State<TripMapScreen> {
+  final mapController = MapController();
+
+  TripRoute? route;
+  bool calculating = false;
+  bool mapReady = false;
+  String? routeError;
+
+  TripBooking get booking => widget.booking;
+
+  @override
+  void dispose() {
+    mapController.dispose();
+    super.dispose();
+  }
+
   bool validCoordinates(TripCoordinates? coordinates) {
-    return coordinates != null &&
-        coordinates.latitude.isFinite &&
-        coordinates.longitude.isFinite &&
-        coordinates.latitude >= -90 &&
-        coordinates.latitude <= 90 &&
-        coordinates.longitude >= -180 &&
-        coordinates.longitude <= 180;
+    return RouteService.validCoordinates(coordinates);
   }
 
   LatLng mapPoint(TripCoordinates coordinates) {
     return LatLng(coordinates.latitude, coordinates.longitude);
+  }
+
+  String durationLabel(int totalMinutes) {
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+
+    if (hours == 0) return '$minutes min';
+    if (minutes == 0) return '$hours hr';
+
+    return '$hours hr $minutes min';
+  }
+
+  Future<void> calculateRoute() async {
+    if (calculating) return;
+
+    setState(() {
+      calculating = true;
+      routeError = null;
+    });
+
+    try {
+      final result = await RouteService.fetchRoute(booking);
+
+      if (!mounted) return;
+
+      setState(() {
+        route = result;
+      });
+
+      if (mapReady) {
+        mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(result.points),
+            padding: const EdgeInsets.all(60),
+            maxZoom: 16,
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        routeError = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          calculating = false;
+        });
+      }
+    }
   }
 
   Marker locationMarker({
@@ -191,6 +257,10 @@ class TripMapScreen extends StatelessWidget {
           point.longitude == pickup.longitude,
     );
 
+    final allStopsMapped = mappedStops == booking.stops.length;
+    final canCalculate = allStopsMapped && !allSamePoint;
+    final currentRoute = route;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Trip map')),
       body: SafeArea(
@@ -198,11 +268,9 @@ class TripMapScreen extends StatelessWidget {
           builder: (context, constraints) {
             return Column(
               children: [
-                // Keep long place names and stop lists scrollable
-                // so there is still space for the map.
                 ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxHeight: constraints.maxHeight * 0.4,
+                    maxHeight: constraints.maxHeight * 0.45,
                   ),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
@@ -233,32 +301,92 @@ class TripMapScreen extends StatelessWidget {
                               ? Colors.teal
                               : Colors.deepOrange,
                         ),
-                        if (booking.stops.isNotEmpty) ...[
-                          Text(
-                            '$mappedStops of ${booking.stops.length} '
-                            'stops have map locations.',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        const Text(
-                          'Saved locations only. Road routes and '
-                          'live tracking will be added later.',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                        if (sameEndpoints) ...[
-                          const SizedBox(height: 8),
+                        if (!allStopsMapped) ...[
                           const Text(
-                            'Pickup and return share one teal marker.',
+                            'Route calculation needs map locations for '
+                            'every stop. Create a new booking and use '
+                            'Search for each stop.',
                             style: TextStyle(color: Colors.black54),
                           ),
+                          const SizedBox(height: 8),
                         ],
+                        if (allSamePoint) ...[
+                          const Text(
+                            'Route calculation needs at least two '
+                            'different map locations.',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        if (currentRoute != null) ...[
+                          Text(
+                            'Distance: '
+                            '${currentRoute.distanceKilometres.toStringAsFixed(1)} km',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Estimated driving time: '
+                            '${durationLabel(currentRoute.durationMinutes)}',
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        if (routeError != null) ...[
+                          Text(
+                            routeError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        FilledButton.icon(
+                          onPressed: calculating || !canCalculate
+                              ? null
+                              : calculateRoute,
+                          icon: calculating
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.route),
+                          label: Text(
+                            calculating
+                                ? 'Calculating...'
+                                : currentRoute == null
+                                ? 'Calculate route'
+                                : 'Recalculate route',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Calculation sends selected locations to the '
+                          'OSRM demo routing service. This is a general '
+                          'driving estimate, excluding visits and waiting. '
+                          'Vehicle restrictions and live traffic '
+                          'are not checked by this app.',
+                          style: TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'The map shows the saved outbound journey. '
+                          'A separately scheduled return leg is not '
+                          'included in this calculation.',
+                          style: TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
                       ],
                     ),
                   ),
                 ),
                 Expanded(
                   child: FlutterMap(
+                    mapController: mapController,
                     options: MapOptions(
                       initialCenter: pickup,
                       initialZoom: 15,
@@ -269,15 +397,28 @@ class TripMapScreen extends StatelessWidget {
                               padding: const EdgeInsets.all(60),
                               maxZoom: 16,
                             ),
+                      onMapReady: () {
+                        mapReady = true;
+                      },
                       minZoom: 3,
                       maxZoom: 19,
                     ),
                     children: [
-                      if (loadMapTiles)
+                      if (widget.loadMapTiles)
                         TileLayer(
                           urlTemplate:
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                           userAgentPackageName: 'com.sevi2001.triplanka',
+                        ),
+                      if (currentRoute != null)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: currentRoute.points,
+                              color: Colors.blue,
+                              strokeWidth: 5,
+                            ),
+                          ],
                         ),
                       MarkerLayer(markers: markers),
                       const Align(
