@@ -12,6 +12,11 @@ import 'location_picker_screen.dart';
 import 'plan_trip_screen.dart';
 import 'profile_screen.dart';
 import 'ride_now_screen.dart';
+import 'driver_dashboard_screen.dart';
+
+const tripBlue = Color(0xFF2563EB);
+const tripNavy = Color(0xFF14213D);
+const tripBackground = Color(0xFFF5F7FB);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,8 +25,6 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-
-    await BookingStore.load();
 
     runApp(const TripLankaApp());
   } catch (error) {
@@ -36,7 +39,7 @@ Future<void> main() async {
               padding: EdgeInsets.all(24),
               child: Text(
                 'Could not start TripLanka. '
-                'Check your connection and Firebase configuration, '
+                'Check your Firebase configuration, '
                 'then restart the app.',
                 textAlign: TextAlign.center,
               ),
@@ -57,7 +60,7 @@ class TripLankaApp extends StatelessWidget {
 
   final bool loadMapTiles;
 
-  // Set false only in tests that check the existing Home screen.
+  // Use false only for Home-screen tests.
   final bool useAuthentication;
 
   @override
@@ -67,8 +70,43 @@ class TripLankaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: tripBlue,
+          primary: tripBlue,
+        ),
+        scaffoldBackgroundColor: tripBackground,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: tripBackground,
+          foregroundColor: tripNavy,
+          centerTitle: false,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+        ),
+        navigationBarTheme: const NavigationBarThemeData(
+          backgroundColor: Colors.white,
+          indicatorColor: Color(0xFFE0EAFF),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFE0E6EF)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: tripBlue, width: 1.5),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
       ),
       home: useAuthentication
           ? AuthGate(loadMapTiles: loadMapTiles)
@@ -77,15 +115,28 @@ class TripLankaApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key, required this.loadMapTiles});
 
   final bool loadMapTiles;
 
   @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  late final Stream<User?> authStream;
+
+  @override
+  void initState() {
+    super.initState();
+    authStream = FirebaseAuth.instance.authStateChanges();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: authStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Scaffold(
@@ -109,7 +160,7 @@ class AuthGate extends StatelessWidget {
 
         return MainScreen(
           key: ValueKey(user.uid),
-          loadMapTiles: loadMapTiles,
+          loadMapTiles: widget.loadMapTiles,
           showAccount: true,
         );
       },
@@ -132,7 +183,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool creatingAccount = false;
   bool busy = false;
   bool hidePassword = true;
-
   String? message;
 
   @override
@@ -145,7 +195,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String? validateEmail(String? value) {
     final email = value?.trim() ?? '';
 
-    if (email.isEmpty) return 'Enter your email address';
+    if (email.isEmpty) {
+      return 'Enter your email address';
+    }
 
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
       return 'Enter a valid email address';
@@ -180,9 +232,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> submit() async {
-    if (busy || !formKey.currentState!.validate()) return;
+    if (busy || !(formKey.currentState?.validate() ?? false)) {
+      return;
+    }
 
     FocusScope.of(context).unfocus();
+
+    final email = emailController.text.trim();
+    final password = passwordController.text;
+    final createAccount = creatingAccount;
 
     setState(() {
       busy = true;
@@ -190,10 +248,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final email = emailController.text.trim();
-      final password = passwordController.text;
-
-      if (creatingAccount) {
+      if (createAccount) {
         await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
           password: password,
@@ -205,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // AuthGate opens Home when authentication succeeds.
+      // AuthGate opens Home after successful authentication.
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
 
@@ -241,15 +296,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
     FocusScope.of(context).unfocus();
 
+    final email = emailController.text.trim();
+
     setState(() {
       busy = true;
       message = null;
     });
 
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(
-        email: emailController.text.trim(),
-      );
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
 
       if (!mounted) return;
 
@@ -292,23 +347,44 @@ class _LoginScreenState extends State<LoginScreen> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.all(24),
                 children: [
-                  const Icon(Icons.explore, size: 64, color: Colors.teal),
-                  const SizedBox(height: 16),
+                  Center(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: tripBlue,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Icon(
+                        Icons.explore,
+                        size: 46,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   const Text(
                     'TripLanka',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 32,
+                      fontSize: 34,
                       fontWeight: FontWeight.bold,
-                      color: Colors.teal,
+                      color: tripNavy,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Your next journey starts here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 32),
                   Text(
                     creatingAccount ? 'Create your account' : 'Welcome back',
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
+                      color: tripNavy,
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -321,7 +397,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Email address',
                       prefixIcon: Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -346,7 +421,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'Password',
                       prefixIcon: const Icon(Icons.lock_outline),
-                      border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         tooltip: hidePassword
                             ? 'Show password'
@@ -368,7 +442,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   if (message != null) ...[
                     const SizedBox(height: 16),
-                    Text(message!),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF1FF),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(message!),
+                    ),
                   ],
                   const SizedBox(height: 24),
                   FilledButton(
@@ -381,15 +462,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           : 'Sign in',
                     ),
                   ),
+                  const SizedBox(height: 8),
                   TextButton(
                     onPressed: busy
                         ? null
                         : () {
+                            formKey.currentState?.reset();
+
                             setState(() {
                               creatingAccount = !creatingAccount;
                               passwordController.clear();
                               message = null;
-                              formKey.currentState?.reset();
                             });
                           },
                     child: Text(
@@ -460,13 +543,17 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: widget.showAccount
           ? AppBar(
-              title: const Text('TripLanka'),
+              title: const Text(
+                'TripLanka',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               actions: [
                 TextButton.icon(
                   onPressed: signingOut ? null : signOut,
-                  icon: const Icon(Icons.logout),
+                  icon: const Icon(Icons.logout, size: 18),
                   label: Text(signingOut ? 'Signing out...' : 'Sign out'),
                 ),
+                const SizedBox(width: 8),
               ],
             )
           : null,
@@ -474,8 +561,15 @@ class _MainScreenState extends State<MainScreen> {
         index: selectedIndex,
         children: [
           HomeScreen(loadMapTiles: widget.loadMapTiles),
-          const BookingsScreen(),
-          const ProfileScreen(),
+          // Avoid accessing Firebase in authentication-free Home tests.
+          if (widget.showAccount)
+            const BookingsScreen()
+          else
+            const Center(child: Text('Sign in to view bookings.')),
+          if (widget.showAccount)
+            const ProfileScreen()
+          else
+            const Center(child: Text('Sign in to view your profile.')),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -533,28 +627,28 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> searchLocation({required bool isPickup}) async {
     FocusScope.of(context).unfocus();
 
-    final location = await Navigator.of(context).push<SelectedLocation>(
+    final selected = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
         builder: (_) => LocationPickerScreen(
-          title: isPickup ? 'Find pickup' : 'Find destination',
+          title: isPickup ? 'Search pickup' : 'Search destination',
           confirmLabel: isPickup ? 'Use this pickup' : 'Use this destination',
         ),
       ),
     );
 
-    if (!mounted || location == null) return;
+    if (!mounted || selected == null) return;
 
     final coordinates = TripCoordinates(
-      latitude: location.point.latitude,
-      longitude: location.point.longitude,
+      latitude: selected.point.latitude,
+      longitude: selected.point.longitude,
     );
 
     setState(() {
       if (isPickup) {
-        pickupController.text = location.name;
+        pickupController.text = selected.name;
         pickupCoordinates = coordinates;
       } else {
-        destinationController.text = location.name;
+        destinationController.text = selected.name;
         destinationCoordinates = coordinates;
       }
     });
@@ -565,211 +659,331 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
-    final selectedPickupCoordinates = pickupCoordinates;
-    final selectedDestinationCoordinates = destinationCoordinates;
+    final selectedPickup = pickupCoordinates;
+    final selectedDestination = destinationCoordinates;
 
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) {
-          if (service == 'Ride now') {
-            return RideNowScreen(
-              pickup: pickup,
-              destination: destination,
-              pickupCoordinates: selectedPickupCoordinates,
-              destinationCoordinates: selectedDestinationCoordinates,
-            );
-          }
+    final Widget screen;
 
-          if (service == 'Plan a trip') {
-            return PlanTripScreen(
-              pickup: pickup,
-              destination: destination,
-              pickupCoordinates: selectedPickupCoordinates,
-              destinationCoordinates: selectedDestinationCoordinates,
-            );
-          }
+    switch (service) {
+      case 'Ride now':
+        screen = RideNowScreen(
+          pickup: pickup,
+          destination: destination,
+          pickupCoordinates: selectedPickup,
+          destinationCoordinates: selectedDestination,
+        );
+        break;
+      case 'Plan a trip':
+        screen = PlanTripScreen(
+          pickup: pickup,
+          destination: destination,
+          pickupCoordinates: selectedPickup,
+          destinationCoordinates: selectedDestination,
+        );
+        break;
+      case 'Airport transfer':
+        screen = AirportTransferScreen(
+          pickup: pickup,
+          destination: destination,
+          pickupCoordinates: selectedPickup,
+          destinationCoordinates: selectedDestination,
+        );
+        break;
+      case 'Full-day driver':
+        screen = FullDayDriverScreen(
+          pickup: pickup,
+          destination: destination,
+          pickupCoordinates: selectedPickup,
+          destinationCoordinates: selectedDestination,
+        );
+        break;
+      default:
+        screen = BookingScreen(
+          service: service,
+          pickup: pickup,
+          destination: destination,
+        );
+    }
 
-          if (service == 'Airport transfer') {
-            return AirportTransferScreen(
-              pickup: pickup,
-              destination: destination,
-              pickupCoordinates: selectedPickupCoordinates,
-              destinationCoordinates: selectedDestinationCoordinates,
-            );
-          }
-
-          if (service == 'Full-day driver') {
-            return FullDayDriverScreen(
-              pickup: pickup,
-              destination: destination,
-              pickupCoordinates: selectedPickupCoordinates,
-              destinationCoordinates: selectedDestinationCoordinates,
-            );
-          }
-
-          return BookingScreen(
-            service: service,
-            pickup: pickup,
-            destination: destination,
-          );
-        },
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   Widget locationField({
     required String label,
     required IconData icon,
+    required Color color,
     required TextEditingController controller,
-    required ValueChanged<String> onChanged,
+    required bool isPickup,
   }) {
     return TextField(
       controller: controller,
-      onChanged: onChanged,
+      onChanged: (_) {
+        setState(() {
+          if (isPickup) {
+            pickupCoordinates = null;
+          } else {
+            destinationCoordinates = null;
+          }
+        });
+      },
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: Colors.teal),
+        prefixIcon: Icon(icon, color: color),
+        suffixIcon: IconButton(
+          tooltip: isPickup ? 'Search pickup' : 'Search destination',
+          onPressed: () => searchLocation(isPickup: isPickup),
+          icon: const Icon(Icons.search, color: tripBlue),
+        ),
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: tripBackground,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
       ),
-    );
-  }
-
-  Widget coordinateLabel(TripCoordinates coordinates) {
-    return Text(
-      'Map location selected: '
-      '${coordinates.latitude.toStringAsFixed(5)}, '
-      '${coordinates.longitude.toStringAsFixed(5)}',
-      style: const TextStyle(color: Colors.teal, fontSize: 12),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final selectedPickup = pickupCoordinates;
-    final selectedDestination = destinationCoordinates;
-
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
+          constraints: const BoxConstraints(maxWidth: 560),
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [tripBlue, Color(0xFF1746A2)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(26),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.explore, color: Colors.white, size: 28),
+                        SizedBox(width: 10),
+                        Text(
+                          'Let’s explore',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 24),
+                    Text(
+                      'Your next journey\nstarts here.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        height: 1.15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'A quick ride, a day out, or a trip with friends.',
+                      style: TextStyle(color: Color(0xFFDCE8FF), fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE7ECF3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Where are you going?',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                        color: tripNavy,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    locationField(
+                      label: 'Pickup location',
+                      icon: Icons.my_location,
+                      color: const Color(0xFF0D9488),
+                      controller: pickupController,
+                      isPickup: true,
+                    ),
+                    const SizedBox(height: 12),
+                    locationField(
+                      label: 'Destination',
+                      icon: Icons.location_on,
+                      color: const Color(0xFFF43F5E),
+                      controller: destinationController,
+                      isPickup: false,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Tap the search icon to select a place on the map.',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    if (pickupCoordinates != null ||
+                        destinationCoordinates != null) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (pickupCoordinates != null)
+                            const Chip(
+                              avatar: Icon(
+                                Icons.check_circle,
+                                size: 17,
+                                color: Color(0xFF0D9488),
+                              ),
+                              label: Text('Pickup selected'),
+                            ),
+                          if (destinationCoordinates != null)
+                            const Chip(
+                              avatar: Icon(
+                                Icons.check_circle,
+                                size: 17,
+                                color: Color(0xFF0D9488),
+                              ),
+                              label: Text('Destination selected'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              ServiceCard(
+                title: 'Drive with TripLanka',
+                subtitle: 'Your driver dashboard and registration',
+                icon: Icons.badge_outlined,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DriverDashboardScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 26),
+              const Text(
+                'Choose your journey',
+                style: TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.bold,
+                  color: tripNavy,
+                ),
+              ),
+              const SizedBox(height: 14),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth < 300 ? 1 : 2;
+                  final width =
+                      (constraints.maxWidth - (columns - 1) * 12) / columns;
+
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      SizedBox(
+                        width: width,
+                        child: ServiceCard(
+                          title: 'Ride now',
+                          subtitle: 'For a quick journey',
+                          icon: Icons.local_taxi_outlined,
+                          onTap: () => openBooking('Ride now'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: ServiceCard(
+                          title: 'Plan a trip',
+                          subtitle: 'Dates, stops, and friends',
+                          icon: Icons.calendar_month_outlined,
+                          onTap: () => openBooking('Plan a trip'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: ServiceCard(
+                          title: 'Airport transfer',
+                          subtitle: 'Plan your airport journey',
+                          icon: Icons.flight_takeoff,
+                          onTap: () => openBooking('Airport transfer'),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: ServiceCard(
+                          title: 'Full-day driver',
+                          subtitle: 'Explore at your own pace',
+                          icon: Icons.directions_car_outlined,
+                          onTap: () => openBooking('Full-day driver'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 26),
+              const Text(
+                'Explore the map',
+                style: TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.bold,
+                  color: tripNavy,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Map preview centered on Colombo.',
+                style: TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: SizedBox(
+                  height: 200,
+                  child: HomeMap(loadTiles: widget.loadMapTiles),
+                ),
+              ),
+              const SizedBox(height: 20),
               const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.explore, size: 32, color: Colors.teal),
+                  Icon(Icons.info_outline, color: Colors.black54, size: 18),
                   SizedBox(width: 8),
-                  Text(
-                    'TripLanka',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.teal,
+                  Expanded(
+                    child: Text(
+                      'Demo bookings. Driver matching and live '
+                      'tracking are not connected yet.',
+                      style: TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              const Text(
-                'Where are you going?',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Plan your next journey with us.',
-                style: TextStyle(color: Colors.black54),
-              ),
-              const SizedBox(height: 24),
-              locationField(
-                label: 'Pickup location',
-                icon: Icons.my_location,
-                controller: pickupController,
-                onChanged: (_) {
-                  if (pickupCoordinates == null) return;
-
-                  setState(() {
-                    pickupCoordinates = null;
-                  });
-                },
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => searchLocation(isPickup: true),
-                  icon: const Icon(Icons.search),
-                  label: const Text('Search pickup'),
-                ),
-              ),
-              if (selectedPickup != null) coordinateLabel(selectedPickup),
-              const SizedBox(height: 14),
-              locationField(
-                label: 'Destination',
-                icon: Icons.location_on,
-                controller: destinationController,
-                onChanged: (_) {
-                  if (destinationCoordinates == null) return;
-
-                  setState(() {
-                    destinationCoordinates = null;
-                  });
-                },
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => searchLocation(isPickup: false),
-                  icon: const Icon(Icons.search),
-                  label: const Text('Search destination'),
-                ),
-              ),
-              if (selectedDestination != null)
-                coordinateLabel(selectedDestination),
-              const SizedBox(height: 24),
-              const Text(
-                'Travel options',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
               const SizedBox(height: 12),
-              ServiceCard(
-                title: 'Ride now',
-                subtitle: 'Book a nearby driver',
-                icon: Icons.local_taxi,
-                onTap: () => openBooking('Ride now'),
-              ),
-              ServiceCard(
-                title: 'Plan a trip',
-                subtitle: 'Choose your date and stops',
-                icon: Icons.calendar_month,
-                onTap: () => openBooking('Plan a trip'),
-              ),
-              ServiceCard(
-                title: 'Airport transfer',
-                subtitle: 'Book an airport pickup or drop-off',
-                icon: Icons.flight,
-                onTap: () => openBooking('Airport transfer'),
-              ),
-              ServiceCard(
-                title: 'Full-day driver',
-                subtitle: 'Explore with a driver for the day',
-                icon: Icons.directions_car,
-                onTap: () => openBooking('Full-day driver'),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Explore the map',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'The marker shows Colombo. '
-                'Your current location is not connected yet.',
-                style: TextStyle(color: Colors.black54),
-              ),
-              const SizedBox(height: 12),
-              HomeMap(loadTiles: widget.loadMapTiles),
-              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -794,16 +1008,48 @@ class ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Material(
       color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(14),
-        leading: Icon(icon, size: 30, color: Colors.teal),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: const BorderSide(color: Color(0xFFE7ECF3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF1FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: tripBlue, size: 26),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: tripNavy,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              const Icon(Icons.arrow_forward, color: tripBlue, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }
