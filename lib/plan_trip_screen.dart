@@ -23,6 +23,10 @@ class PlanTripScreen extends StatefulWidget {
 }
 
 class _PlanTripScreenState extends State<PlanTripScreen> {
+  static const blue = Color(0xFF2563EB);
+  static const navy = Color(0xFF14213D);
+  static const muted = Color(0xFF738097);
+
   final formKey = GlobalKey<FormState>();
 
   late final TextEditingController pickupController;
@@ -123,7 +127,6 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
     if (!mounted || location == null) return;
 
-    // Locate the same stop again instead of relying on an old index.
     final currentIndex = stopControllers.indexOf(controller);
     if (currentIndex == -1) return;
 
@@ -143,6 +146,8 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   void removeStop(TextEditingController controller) {
     final index = stopControllers.indexOf(controller);
     if (index == -1) return;
+
+    FocusScope.of(context).unfocus();
 
     setState(() {
       stopControllers.removeAt(index);
@@ -248,7 +253,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   void continueBooking() {
     FocusScope.of(context).unfocus();
 
-    if (!formKey.currentState!.validate()) {
+    if (!(formKey.currentState?.validate() ?? false)) {
       showMessage('Fill in pickup, destination, and every added stop.');
       return;
     }
@@ -315,22 +320,24 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       ].join('\n');
     }
 
-    // Capture names and coordinates together in the same order.
-    final stops = stopControllers
-        .map((controller) => controller.text.trim())
-        .toList();
+    final stops = List<String>.unmodifiable(
+      stopControllers.map((controller) => controller.text.trim()),
+    );
 
     final selectedStopCoordinates = List<TripCoordinates?>.unmodifiable(
       stopCoordinates,
     );
+
+    final selectedPickup = pickupCoordinates;
+    final selectedDestination = destinationCoordinates;
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => VehicleSelectionScreen(
           pickup: pickup,
           destination: destination,
-          pickupCoordinates: pickupCoordinates,
-          destinationCoordinates: destinationCoordinates,
+          pickupCoordinates: selectedPickup,
+          destinationCoordinates: selectedDestination,
           stops: stops,
           stopCoordinates: selectedStopCoordinates,
           departure: departure,
@@ -341,92 +348,129 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     );
   }
 
+  Widget section({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE5EAF2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: blue, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: navy,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+
   Widget locationField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
-    ValueChanged<String>? onChanged,
-  }) {
-    return TextFormField(
-      controller: controller,
-      validator: validateLocation,
-      onChanged: onChanged,
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Colors.teal),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
-  }
-
-  Widget coordinateLabel(TripCoordinates coordinates) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        'Map location selected: '
-        '${coordinates.latitude.toStringAsFixed(5)}, '
-        '${coordinates.longitude.toStringAsFixed(5)}',
-        style: const TextStyle(color: Colors.teal, fontSize: 12),
-      ),
-    );
-  }
-
-  Widget locationSearch({
-    required bool isPickup,
+    required Color color,
+    required VoidCallback onSearch,
+    required String searchLabel,
     required TripCoordinates? coordinates,
+    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextButton.icon(
-          onPressed: () => searchLocation(isPickup: isPickup),
-          icon: const Icon(Icons.search),
-          label: Text(isPickup ? 'Search pickup' : 'Search destination'),
+        TextFormField(
+          controller: controller,
+          validator: validateLocation,
+          onChanged: onChanged,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: Icon(icon, color: color),
+            suffixIcon: IconButton(
+              tooltip: searchLabel,
+              onPressed: onSearch,
+              icon: const Icon(Icons.search, color: blue),
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF5F7FB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
         ),
-        if (coordinates != null) coordinateLabel(coordinates),
+        if (coordinates != null) ...[
+          const SizedBox(height: 7),
+          const Row(
+            children: [
+              Icon(Icons.check_circle, size: 15, color: Color(0xFF0D9488)),
+              SizedBox(width: 5),
+              Text(
+                'Map location selected',
+                style: TextStyle(fontSize: 11, color: Color(0xFF0D9488)),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
 
   Widget stopField(int index) {
     final controller = stopControllers[index];
-    final coordinates = stopCoordinates[index];
 
     return Padding(
       key: ObjectKey(controller),
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: locationField(
-                  controller: controller,
-                  label: 'Stop ${index + 1}',
-                  icon: Icons.place_outlined,
-                  onChanged: (_) => clearStopCoordinates(controller),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Remove stop ${index + 1}',
-                icon: const Icon(
-                  Icons.remove_circle_outline,
-                  color: Colors.redAccent,
-                ),
-                onPressed: () => removeStop(controller),
-              ),
-            ],
+          Expanded(
+            child: locationField(
+              controller: controller,
+              label: 'Stop ${index + 1}',
+              icon: Icons.place_outlined,
+              color: blue,
+              onSearch: () => searchStop(controller),
+              searchLabel: 'Search stop ${index + 1}',
+              coordinates: stopCoordinates[index],
+              onChanged: (_) => clearStopCoordinates(controller),
+            ),
           ),
-          TextButton.icon(
-            onPressed: () => searchStop(controller),
-            icon: const Icon(Icons.search),
-            label: Text('Search stop ${index + 1}'),
+          IconButton(
+            tooltip: 'Remove stop ${index + 1}',
+            onPressed: () => removeStop(controller),
+            icon: const Icon(
+              Icons.remove_circle_outline,
+              color: Colors.redAccent,
+            ),
           ),
-          if (coordinates != null) coordinateLabel(coordinates),
         ],
       ),
     );
@@ -438,14 +482,75 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: Colors.teal),
-        title: Text(title),
-        subtitle: Text(value),
-        trailing: const Icon(Icons.chevron_right),
+    return Material(
+      color: const Color(0xFFF5F7FB),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: blue, size: 23),
+              const SizedBox(height: 10),
+              Text(title, style: const TextStyle(fontSize: 11, color: muted)),
+              const SizedBox(height: 5),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: navy,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget dateTimePair({
+    required String dateTitle,
+    required String dateValue,
+    required VoidCallback onDate,
+    required String timeTitle,
+    required String timeValue,
+    required VoidCallback onTime,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dateCard = dateTimeCard(
+          title: dateTitle,
+          value: dateValue,
+          icon: Icons.calendar_month_outlined,
+          onTap: onDate,
+        );
+
+        final timeCard = dateTimeCard(
+          title: timeTitle,
+          value: timeValue,
+          icon: Icons.schedule,
+          onTap: onTime,
+        );
+
+        if (constraints.maxWidth < 280) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [dateCard, const SizedBox(height: 12), timeCard],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: dateCard),
+            const SizedBox(width: 12),
+            Expanded(child: timeCard),
+          ],
+        );
+      },
     );
   }
 
@@ -462,179 +567,274 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         : travelTime!.format(context);
 
     final returnDateLabel = returnDate == null
-        ? 'Choose return date'
+        ? 'Choose date'
         : localizations.formatMediumDate(returnDate!);
 
     final returnTimeLabel = returnTime == null
-        ? 'Choose return time'
+        ? 'Choose time'
         : returnTime!.format(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Plan a trip')),
+      backgroundColor: const Color(0xFFF5F7FB),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: Form(
-              key: formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const Text(
-                    'Plan your journey',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Plan a one-way or return trip '
-                    'with optional outbound stops.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 24),
-                  locationField(
-                    controller: pickupController,
-                    label: 'Pickup location',
-                    icon: Icons.my_location,
-                    onChanged: (_) {
-                      if (pickupCoordinates == null) return;
-
-                      setState(() {
-                        pickupCoordinates = null;
-                      });
-                    },
-                  ),
-                  locationSearch(
-                    isPickup: true,
-                    coordinates: pickupCoordinates,
-                  ),
-                  const SizedBox(height: 14),
-                  for (int i = 0; i < stopControllers.length; i++) stopField(i),
-                  locationField(
-                    controller: destinationController,
-                    label: 'Destination',
-                    icon: Icons.location_on,
-                    onChanged: (_) {
-                      if (destinationCoordinates == null) return;
-
-                      setState(() {
-                        destinationCoordinates = null;
-                      });
-                    },
-                  ),
-                  locationSearch(
-                    isPickup: false,
-                    coordinates: destinationCoordinates,
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: addStop,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add stop'),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Use Search for each stop you want to show on the map.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 20),
-                  dateTimeCard(
-                    title: 'Travel date',
-                    value: dateLabel,
-                    icon: Icons.calendar_month,
-                    onTap: chooseDate,
-                  ),
-                  dateTimeCard(
-                    title: 'Departure time',
-                    value: timeLabel,
-                    icon: Icons.access_time,
-                    onTap: chooseTime,
-                  ),
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.people, color: Colors.teal),
-                          const SizedBox(width: 12),
-                          const Expanded(child: Text('Passengers')),
-                          IconButton(
-                            tooltip: 'Fewer passengers',
-                            onPressed: passengers > 1
-                                ? () {
-                                    setState(() {
-                                      passengers--;
-                                    });
-                                  }
-                                : null,
-                            icon: const Icon(Icons.remove),
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 16, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back, color: navy),
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Plan a trip',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: navy,
                           ),
-                          Text(
-                            '$passengers',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Form(
+                    key: formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        const Text(
+                          'Plan your journey',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: navy,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Choose your places, schedule, and travel group.',
+                          style: TextStyle(color: muted),
+                        ),
+                        const SizedBox(height: 22),
+                        section(
+                          title: 'Your route',
+                          icon: Icons.route,
+                          children: [
+                            locationField(
+                              controller: pickupController,
+                              label: 'Pickup location',
+                              icon: Icons.my_location,
+                              color: const Color(0xFF0D9488),
+                              onSearch: () => searchLocation(isPickup: true),
+                              searchLabel: 'Search pickup',
+                              coordinates: pickupCoordinates,
+                              onChanged: (_) {
+                                if (pickupCoordinates == null) return;
+
+                                setState(() {
+                                  pickupCoordinates = null;
+                                });
+                              },
                             ),
+                            const SizedBox(height: 14),
+                            for (int i = 0; i < stopControllers.length; i++)
+                              stopField(i),
+                            locationField(
+                              controller: destinationController,
+                              label: 'Destination',
+                              icon: Icons.location_on,
+                              color: const Color(0xFFF43F5E),
+                              onSearch: () => searchLocation(isPickup: false),
+                              searchLabel: 'Search destination',
+                              coordinates: destinationCoordinates,
+                              onChanged: (_) {
+                                if (destinationCoordinates == null) {
+                                  return;
+                                }
+
+                                setState(() {
+                                  destinationCoordinates = null;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextButton.icon(
+                              onPressed: addStop,
+                              icon: const Icon(Icons.add_circle_outline),
+                              label: const Text('Add stop'),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Use the search icons to save map locations '
+                              'for pickup, destination, and every stop.',
+                              style: TextStyle(fontSize: 11, color: muted),
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Departure',
+                          icon: Icons.calendar_month_outlined,
+                          children: [
+                            dateTimePair(
+                              dateTitle: 'Travel date',
+                              dateValue: dateLabel,
+                              onDate: chooseDate,
+                              timeTitle: 'Departure time',
+                              timeValue: timeLabel,
+                              onTime: chooseTime,
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Travel group',
+                          icon: Icons.people_outline,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Passengers',
+                                    style: TextStyle(color: navy),
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  tooltip: 'Fewer passengers',
+                                  onPressed: passengers > 1
+                                      ? () {
+                                          setState(() {
+                                            passengers--;
+                                          });
+                                        }
+                                      : null,
+                                  icon: const Icon(Icons.remove),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                  ),
+                                  child: Text(
+                                    '$passengers',
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: navy,
+                                    ),
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  tooltip: 'More passengers',
+                                  onPressed: passengers < 15
+                                      ? () {
+                                          setState(() {
+                                            passengers++;
+                                          });
+                                        }
+                                      : null,
+                                  icon: const Icon(Icons.add),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Choose from 1 to 15 passengers.',
+                              style: TextStyle(fontSize: 11, color: muted),
+                            ),
+                          ],
+                        ),
+                        section(
+                          title: 'Return journey',
+                          icon: Icons.sync_alt,
+                          children: [
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text(
+                                'Return trip',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: navy,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Travel back to your pickup location.',
+                                style: TextStyle(fontSize: 12, color: muted),
+                              ),
+                              value: returnTrip,
+                              onChanged: (value) {
+                                setState(() {
+                                  returnTrip = value;
+                                });
+                              },
+                            ),
+                            if (returnTrip) ...[
+                              const SizedBox(height: 12),
+                              dateTimePair(
+                                dateTitle: 'Return date',
+                                dateValue: returnDateLabel,
+                                onDate: chooseReturnDate,
+                                timeTitle: 'Return departure',
+                                timeValue: returnTimeLabel,
+                                onTime: chooseReturnTime,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Allow time for your outward journey '
+                                'and activities. Return details are '
+                                'saved in the booking notes; the map '
+                                'shows the outbound route.',
+                                style: TextStyle(fontSize: 11, color: muted),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            'Demo booking. No driver is contacted '
+                            'and no payment is taken.',
+                            style: TextStyle(fontSize: 12, color: muted),
                           ),
-                          IconButton(
-                            tooltip: 'More passengers',
-                            onPressed: passengers < 15
-                                ? () {
-                                    setState(() {
-                                      passengers++;
-                                    });
-                                  }
-                                : null,
-                            icon: const Icon(Icons.add),
-                          ),
-                        ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE5EAF2))),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: continueBooking,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: blue,
+                        padding: const EdgeInsets.symmetric(vertical: 17),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: const Icon(Icons.directions_car_outlined),
+                      label: const Text(
+                        'Choose vehicle',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Return trip'),
-                    subtitle: const Text(
-                      'Arrange travel back to your pickup location.',
-                    ),
-                    value: returnTrip,
-                    onChanged: (value) {
-                      setState(() {
-                        returnTrip = value;
-                      });
-                    },
-                  ),
-                  if (returnTrip) ...[
-                    dateTimeCard(
-                      title: 'Return date',
-                      value: returnDateLabel,
-                      icon: Icons.calendar_month,
-                      onTap: chooseReturnDate,
-                    ),
-                    dateTimeCard(
-                      title: 'Return departure time',
-                      value: returnTimeLabel,
-                      icon: Icons.access_time,
-                      onTap: chooseReturnTime,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Allow enough time for the outbound journey '
-                      'and your activities before returning.',
-                      style: TextStyle(color: Colors.black54),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: continueBooking,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                    ),
-                    child: const Text('Continue'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
