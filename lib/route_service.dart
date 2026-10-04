@@ -22,6 +22,8 @@ class TripRoute {
 }
 
 class RouteService {
+  RouteService._();
+
   static bool validCoordinates(TripCoordinates? coordinates) {
     return coordinates != null &&
         coordinates.latitude.isFinite &&
@@ -40,15 +42,18 @@ class RouteService {
       throw Exception('Pickup and destination need selected map locations.');
     }
 
+    if (booking.stopCoordinates.length != booking.stops.length) {
+      throw Exception('The saved stop locations do not match the trip stops.');
+    }
+
     final locations = <TripCoordinates>[pickup!];
 
     for (int i = 0; i < booking.stops.length; i++) {
       final coordinates = booking.stopCoordinates[i];
 
-      // Do not silently skip an intended stop.
       if (!validCoordinates(coordinates)) {
         throw Exception(
-          'Stop ${i + 1} has no valid map location. '
+          'Stop ${i + 1} needs a selected map location. '
           'Create a new booking using Search for every stop.',
         );
       }
@@ -69,7 +74,7 @@ class RouteService {
       throw Exception('Choose at least two different map locations.');
     }
 
-    // OSRM expects longitude first, then latitude.
+    // OSRM expects longitude before latitude.
     final coordinatePath = locations
         .map((point) => '${point.longitude},${point.latitude}')
         .join(';');
@@ -91,39 +96,80 @@ class RouteService {
 
     if (response.statusCode != 200) {
       throw Exception(
-        'The routing service is unavailable. Please try again later.',
+        'The routing service is unavailable. '
+        'Please try again later.',
       );
     }
 
-    final data =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
-    final routes = data['routes'] as List<dynamic>?;
+    if (decoded is! Map) {
+      throw const FormatException('Invalid routing response.');
+    }
 
-    if (data['code'] != 'Ok' || routes == null || routes.isEmpty) {
+    final routes = decoded['routes'];
+
+    if (decoded['code'] != 'Ok' || routes is! List || routes.isEmpty) {
       throw Exception('No driving route was found for these locations.');
     }
 
-    final route = Map<String, dynamic>.from(routes.first as Map);
-    final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
+    final route = routes.first;
 
-    final coordinates = geometry['coordinates'] as List<dynamic>;
+    if (route is! Map) {
+      throw const FormatException('Invalid route data.');
+    }
 
-    final points = coordinates.map((item) {
-      final pair = item as List<dynamic>;
+    final geometry = route['geometry'];
 
-      return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
-    }).toList();
+    if (geometry is! Map || geometry['type'] != 'LineString') {
+      throw const FormatException('Invalid route geometry.');
+    }
 
-    final distance = (route['distance'] as num).toDouble();
-    final duration = (route['duration'] as num).toDouble();
+    final coordinates = geometry['coordinates'];
+    final distanceValue = route['distance'];
+    final durationValue = route['duration'];
+
+    if (coordinates is! List ||
+        distanceValue is! num ||
+        durationValue is! num) {
+      throw const FormatException('Incomplete route data.');
+    }
+
+    final points = <LatLng>[];
+
+    for (final item in coordinates) {
+      if (item is! List ||
+          item.length < 2 ||
+          item[0] is! num ||
+          item[1] is! num) {
+        throw const FormatException('Invalid route coordinate.');
+      }
+
+      final longitude = (item[0] as num).toDouble();
+      final latitude = (item[1] as num).toDouble();
+
+      if (!validCoordinates(
+        TripCoordinates(latitude: latitude, longitude: longitude),
+      )) {
+        throw const FormatException(
+          'Route coordinate is outside the valid range.',
+        );
+      }
+
+      points.add(LatLng(latitude, longitude));
+    }
+
+    final distance = distanceValue.toDouble();
+    final duration = durationValue.toDouble();
 
     if (points.length < 2 ||
         !distance.isFinite ||
         !duration.isFinite ||
         distance < 0 ||
         duration < 0) {
-      throw Exception('The routing service returned an invalid route.');
+      throw const FormatException(
+        'The routing service returned an invalid route.',
+      );
     }
 
     return TripRoute(
