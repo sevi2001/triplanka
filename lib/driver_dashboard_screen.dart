@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'driver_registration_screen.dart';
 import 'driver_requests_screen.dart';
+import 'driver_assigned_trips_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -97,6 +98,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const DriverRequestsScreen()),
+    );
+  }
+
+  void openAssignedTrips() {
+    if (!checkAccount()) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const DriverAssignedTripsScreen(),
+      ),
     );
   }
 
@@ -386,6 +397,22 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                     icon: const Icon(Icons.search),
                     label: const Text('View available requests'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: openAssignedTrips,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: blue,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.assignment_outlined),
+                    label: const Text('My accepted trips'),
                   ),
                 ),
                 const SizedBox(height: 12),
