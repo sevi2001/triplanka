@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'driver_registration_screen.dart';
+import 'driver_requests_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -35,7 +36,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted || user?.uid == userId) return;
 
-      setState(() => setAccount(user));
+      setState(() {
+        setAccount(user);
+      });
     });
   }
 
@@ -63,18 +66,43 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     super.dispose();
   }
 
-  void openRegistration() {
-    if (userId == null || FirebaseAuth.instance.currentUser?.uid != userId) {
-      return;
+  bool checkAccount() {
+    final currentId = FirebaseAuth.instance.currentUser?.uid;
+
+    if (userId != null && currentId == userId) {
+      return true;
     }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Your account changed. Refresh the dashboard.'),
+        ),
+      );
+
+    return false;
+  }
+
+  void openRegistration() {
+    if (!checkAccount()) return;
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const DriverRegistrationScreen()),
     );
   }
 
+  void openRequests() {
+    if (!checkAccount()) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DriverRequestsScreen()),
+    );
+  }
+
   String readText(Map<String, dynamic> data, String key) {
     final value = data[key];
+
     return value is String && value.trim().isNotEmpty
         ? value.trim()
         : 'Not provided';
@@ -104,7 +132,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: blue, size: 22),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF5FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: blue, size: 21),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -161,6 +196,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               style: FilledButton.styleFrom(
                 backgroundColor: blue,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 14,
+                ),
               ),
               child: Text(
                 allowRegistration ? 'Register as driver' : 'Try again',
@@ -173,7 +212,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Widget driverDetails(Map<String, dynamic> data) {
-    final status = data['status'] as String? ?? 'unknown';
+    final storedStatus = data['status'];
+    final status = storedStatus is String ? storedStatus : 'unknown';
+
     final pending = status == 'pending';
     final approved = status == 'approved';
 
@@ -187,11 +228,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     final statusMessage = switch (status) {
       'pending' =>
-        'Your registration is saved. '
-            'You can update your details while approval is pending.',
+        'Your registration is saved. You can update your details '
+            'while approval is pending.',
       'approved' =>
-        'Your profile is marked approved. '
-            'Trip requests and acceptance will be connected next.',
+        'You can view and accept available demo trip requests '
+            'that match your vehicle and passenger capacity.',
       'rejected' =>
         'Your registration has not been approved. '
             'Contact the app administrator for further information.',
@@ -288,6 +329,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: blue,
                       padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('Edit registration'),
@@ -307,7 +351,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Assigned trips',
+                      'Trip requests',
                       style: TextStyle(
                         color: navy,
                         fontSize: 18,
@@ -320,11 +364,37 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               const SizedBox(height: 12),
               Text(
                 approved
-                    ? 'Trip assignment is not connected yet.'
-                    : 'Trip access requires an approved driver profile. '
-                          'Assignment is not connected yet.',
+                    ? 'Find available demo requests that fit your vehicle '
+                          'and choose a trip to accept.'
+                    : 'Available requests will become accessible '
+                          'when your driver profile is approved.',
                 style: const TextStyle(color: muted, fontSize: 13, height: 1.5),
               ),
+              if (approved) ...[
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: openRequests,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.search),
+                    label: const Text('View available requests'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Use a different passenger account to create '
+                  'a test request. You cannot accept your own trip.',
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                ),
+              ],
             ],
           ),
         ),
@@ -437,7 +507,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'View your registration and vehicle details.',
+                        'Manage your registration, view your vehicle '
+                        'details and find available trip requests.',
                         style: TextStyle(color: Color(0xFFDCE8FF), height: 1.5),
                       ),
                     ],
