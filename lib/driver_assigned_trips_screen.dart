@@ -31,6 +31,9 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   String selectedFilter = 'All';
   int streamVersion = 0;
 
+  final Set<String> busyTrips = {};
+  final Set<String> confirmingTrips = {};
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +92,108 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         builder: (_) => TripMapScreen(booking: entry.booking),
       ),
     );
+  }
+
+  Future<void> updateTrip(TripRequestEntry entry) async {
+    final accountId = userId;
+
+    if (accountId == null ||
+        FirebaseAuth.instance.currentUser?.uid != accountId ||
+        entry.driverId != accountId ||
+        busyTrips.contains(entry.id) ||
+        confirmingTrips.contains(entry.id)) {
+      return;
+    }
+
+    if (!entry.accepted && !entry.inProgress) return;
+
+    final starting = entry.accepted;
+    confirmingTrips.add(entry.id);
+
+    bool? confirmed;
+
+    try {
+      confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(starting ? 'Start this trip?' : 'Complete this trip?'),
+          content: Text(
+            starting
+                ? 'Confirm that the journey is starting.\n\n'
+                      '${entry.booking.pickup} → '
+                      '${entry.booking.destination}'
+                : 'Confirm that the journey has finished.\n\n'
+                      'Once completed, this trip cannot be restarted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Go back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(starting ? 'Start trip' : 'Complete trip'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      confirmingTrips.remove(entry.id);
+    }
+
+    if (!mounted ||
+        confirmed != true ||
+        userId != accountId ||
+        FirebaseAuth.instance.currentUser?.uid != accountId) {
+      return;
+    }
+
+    setState(() {
+      busyTrips.add(entry.id);
+    });
+
+    try {
+      if (starting) {
+        await TripRequestStore.start(entry.id);
+      } else {
+        await TripRequestStore.complete(entry.id);
+      }
+
+      if (!mounted ||
+          userId != accountId ||
+          FirebaseAuth.instance.currentUser?.uid != accountId) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(starting ? 'Trip started.' : 'Trip completed.'),
+          ),
+        );
+    } catch (error) {
+      if (!mounted ||
+          userId != accountId ||
+          FirebaseAuth.instance.currentUser?.uid != accountId) {
+        return;
+      }
+
+      final message = error is StateError
+          ? error.message.toString()
+          : 'Could not update the trip. Check your connection '
+                'and permissions, then try again.';
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          busyTrips.remove(entry.id);
+        });
+      }
+    }
   }
 
   Widget messageCard({
@@ -197,27 +302,32 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
 
   Widget tripCard(TripRequestEntry entry) {
     final trip = entry.booking;
-
     final date = MaterialLocalizations.of(
       context,
     ).formatMediumDate(trip.departure);
     final time = TimeOfDay.fromDateTime(trip.departure).format(context);
 
-    final statusText = entry.cancelled
-        ? 'Cancelled'
-        : entry.accepted
-        ? 'Accepted'
-        : 'Status unavailable';
+    final statusColor = switch (entry.status) {
+      'accepted' => blue,
+      'in_progress' => const Color(0xFFC48616),
+      'completed' => green,
+      'cancelled' => red,
+      _ => muted,
+    };
 
-    final statusColor = entry.cancelled
-        ? red
-        : entry.accepted
-        ? green
-        : muted;
+    final statusMessage = switch (entry.status) {
+      'accepted' => 'Start the trip when the journey begins.',
+      'in_progress' => 'Complete the trip when the journey finishes.',
+      'completed' => 'This journey has been completed.',
+      'cancelled' => 'The passenger cancelled this trip.',
+      _ => 'Refresh the page to check this trip’s status.',
+    };
 
     final hasMapLocations =
         validCoordinates(trip.pickupCoordinates) &&
         validCoordinates(trip.destinationCoordinates);
+
+    final busy = busyTrips.contains(entry.id);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -244,25 +354,23 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.09),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  statusText,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              entry.statusLabel,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           locationRow(
@@ -335,27 +443,56 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
           ],
           const SizedBox(height: 16),
           Text(
-            entry.cancelled
-                ? 'The passenger cancelled this trip. '
-                      'It remains here as a record.'
-                : entry.accepted
-                ? 'You accepted this demo trip.'
-                : 'Refresh the page to check this trip’s status.',
+            statusMessage,
             style: TextStyle(
               color: entry.cancelled ? red : muted,
               fontSize: 12,
               height: 1.5,
             ),
           ),
+          if (entry.accepted || entry.inProgress) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: busy ? null : () => updateTrip(entry),
+                style: FilledButton.styleFrom(
+                  backgroundColor: entry.inProgress ? green : blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ),
+                icon: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        entry.accepted
+                            ? Icons.play_arrow
+                            : Icons.check_circle_outline,
+                      ),
+                label: Text(
+                  busy
+                      ? 'Updating...'
+                      : entry.accepted
+                      ? 'Start trip'
+                      : 'Complete trip',
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           if (hasMapLocations)
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: () => openMap(entry),
-                style: FilledButton.styleFrom(
-                  backgroundColor: blue,
-                  foregroundColor: Colors.white,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: blue,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(13),
@@ -420,6 +557,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         final entries = allEntries.where((entry) {
           return switch (selectedFilter) {
             'Accepted' => entry.accepted,
+            'In progress' => entry.inProgress,
+            'Completed' => entry.completed,
             'Cancelled' => entry.cancelled,
             _ => true,
           };
@@ -428,11 +567,11 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         if (entries.isEmpty) {
           return messageCard(
             title: allEntries.isEmpty
-                ? 'No accepted trips yet'
+                ? 'No assigned trips yet'
                 : 'No ${selectedFilter.toLowerCase()} trips',
             message: allEntries.isEmpty
-                ? 'Return to Driver dashboard, open Available requests '
-                      'and accept a matching trip.'
+                ? 'Return to Driver dashboard and accept '
+                      'a matching available request.'
                 : 'Choose another filter to view your trips.',
           );
         }
@@ -461,7 +600,7 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        title: const Text('My accepted trips'),
+        title: const Text('My trips'),
         backgroundColor: background,
         foregroundColor: navy,
         actions: [
@@ -495,7 +634,7 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                       Icon(Icons.route_outlined, color: Colors.white, size: 36),
                       SizedBox(height: 14),
                       Text(
-                        'Your accepted journeys',
+                        'Your journeys',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -504,8 +643,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Review trip details and check for '
-                        'passenger cancellations.',
+                        'Start accepted trips and mark '
+                        'finished journeys as completed.',
                         style: TextStyle(color: Color(0xFFDCE8FF), height: 1.5),
                       ),
                     ],
@@ -516,7 +655,13 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    for (final filter in ['All', 'Accepted', 'Cancelled'])
+                    for (final filter in [
+                      'All',
+                      'Accepted',
+                      'In progress',
+                      'Completed',
+                      'Cancelled',
+                    ])
                       ChoiceChip(
                         label: Text(filter),
                         selected: selectedFilter == filter,
