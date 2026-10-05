@@ -19,7 +19,18 @@ class TripRequestEntry {
   final String? driverId;
 
   bool get accepted => status == 'accepted';
+  bool get inProgress => status == 'in_progress';
+  bool get completed => status == 'completed';
   bool get cancelled => status == 'cancelled';
+
+  String get statusLabel => switch (status) {
+    'pending' => 'Waiting for driver',
+    'accepted' => 'Accepted',
+    'in_progress' => 'Trip in progress',
+    'completed' => 'Completed',
+    'cancelled' => 'Cancelled',
+    _ => 'Status unavailable',
+  };
 
   factory TripRequestEntry.fromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
@@ -55,6 +66,22 @@ class TripRequestStore {
     return List<TripRequestEntry>.unmodifiable(entries);
   }
 
+  static String _requireUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('Please sign in again.');
+    }
+
+    return user.uid;
+  }
+
+  static void _validateRequestId(String requestId) {
+    if (requestId.trim().isEmpty || requestId.contains('/')) {
+      throw ArgumentError('A valid trip request ID is required.');
+    }
+  }
+
   static Stream<List<TripRequestEntry>> watchAvailable(String vehicleType) {
     return requests
         .where('status', isEqualTo: 'pending')
@@ -64,13 +91,11 @@ class TripRequestStore {
   }
 
   static Stream<List<TripRequestEntry>> watchAssigned(String driverId) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    if (currentUser == null || currentUser.uid != driverId) {
+    if (_requireUserId() != driverId) {
       throw StateError('Sign in with the correct driver account.');
     }
 
-    // Keep cancelled trips visible if this driver accepted them earlier.
+    // Includes accepted, ongoing, completed and cancelled trips.
     return requests
         .where('driverId', isEqualTo: driverId)
         .snapshots()
@@ -78,18 +103,11 @@ class TripRequestStore {
   }
 
   static Future<void> accept(String requestId) async {
-    final user = FirebaseAuth.instance.currentUser;
+    _validateRequestId(requestId);
 
-    if (user == null) {
-      throw StateError('Please sign in again.');
-    }
-
-    if (requestId.trim().isEmpty) {
-      throw ArgumentError('A trip request ID is required.');
-    }
-
+    final userId = _requireUserId();
     final database = FirebaseFirestore.instance;
-    final driverDocument = database.collection('drivers').doc(user.uid);
+    final driverDocument = database.collection('drivers').doc(userId);
     final requestDocument = requests.doc(requestId);
 
     await database.runTransaction<void>((transaction) async {
@@ -107,7 +125,7 @@ class TripRequestStore {
         throw StateError('This trip is no longer available. Refresh the list.');
       }
 
-      if (request['ownerId'] == user.uid) {
+      if (request['ownerId'] == userId) {
         throw StateError('You cannot accept your own trip.');
       }
 
@@ -123,17 +141,83 @@ class TripRequestStore {
         throw StateError('Your vehicle does not fit this trip.');
       }
 
-      if (FirebaseAuth.instance.currentUser?.uid != user.uid) {
+      if (FirebaseAuth.instance.currentUser?.uid != userId) {
         throw StateError('Your account changed.');
       }
 
       transaction.update(requestDocument, {
         'status': 'accepted',
-        'driverId': user.uid,
+        'driverId': userId,
         'driverName': driver['name'],
         'driverPhone': driver['phone'],
         'driverRegistration': driver['registrationNumber'],
         'acceptedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  static Future<void> start(String requestId) {
+    return _changeTripStatus(
+      requestId: requestId,
+      expectedStatus: 'accepted',
+      nextStatus: 'in_progress',
+      timestampField: 'startedAt',
+    );
+  }
+
+  static Future<void> complete(String requestId) {
+    return _changeTripStatus(
+      requestId: requestId,
+      expectedStatus: 'in_progress',
+      nextStatus: 'completed',
+      timestampField: 'completedAt',
+    );
+  }
+
+  static Future<void> _changeTripStatus({
+    required String requestId,
+    required String expectedStatus,
+    required String nextStatus,
+    required String timestampField,
+  }) async {
+    _validateRequestId(requestId);
+
+    final userId = _requireUserId();
+    final database = FirebaseFirestore.instance;
+    final driverDocument = database.collection('drivers').doc(userId);
+    final requestDocument = requests.doc(requestId);
+
+    await database.runTransaction<void>((transaction) async {
+      final driverSnapshot = await transaction.get(driverDocument);
+      final requestSnapshot = await transaction.get(requestDocument);
+
+      final driver = driverSnapshot.data();
+      final request = requestSnapshot.data();
+
+      if (driver == null || driver['status'] != 'approved') {
+        throw StateError('Your driver profile must be approved.');
+      }
+
+      if (request == null) {
+        throw StateError('This trip request could not be found.');
+      }
+
+      if (request['driverId'] != userId) {
+        throw StateError('Only the assigned driver can update this trip.');
+      }
+
+      if (request['status'] != expectedStatus) {
+        throw StateError('The trip status has changed. Refresh your trips.');
+      }
+
+      if (FirebaseAuth.instance.currentUser?.uid != userId) {
+        throw StateError('Your account changed.');
+      }
+
+      transaction.update(requestDocument, {
+        'status': nextStatus,
+        timestampField: FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
     });
