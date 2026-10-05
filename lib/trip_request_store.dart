@@ -8,11 +8,35 @@ class TripRequestEntry {
     required this.id,
     required this.ownerId,
     required this.booking,
+    this.status = 'pending',
+    this.driverId,
   });
 
   final String id;
   final String ownerId;
   final TripBooking booking;
+  final String status;
+  final String? driverId;
+
+  bool get accepted => status == 'accepted';
+  bool get cancelled => status == 'cancelled';
+
+  factory TripRequestEntry.fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    final storedDriverId = data['driverId'];
+
+    return TripRequestEntry(
+      id: document.id,
+      ownerId: data['ownerId'] as String,
+      booking: TripBooking.fromJson(
+        Map<String, dynamic>.from(data['trip'] as Map),
+      ),
+      status: data['status'] as String? ?? 'pending',
+      driverId: storedDriverId is String ? storedDriverId : null,
+    );
+  }
 }
 
 class TripRequestStore {
@@ -21,30 +45,36 @@ class TripRequestStore {
   static CollectionReference<Map<String, dynamic>> get requests =>
       FirebaseFirestore.instance.collection('tripRequests');
 
+  static List<TripRequestEntry> _readEntries(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final entries = snapshot.docs.map(TripRequestEntry.fromDocument).toList();
+
+    entries.sort((a, b) => a.booking.departure.compareTo(b.booking.departure));
+
+    return List<TripRequestEntry>.unmodifiable(entries);
+  }
+
   static Stream<List<TripRequestEntry>> watchAvailable(String vehicleType) {
     return requests
         .where('status', isEqualTo: 'pending')
         .where('trip.vehicle', isEqualTo: vehicleType)
         .snapshots()
-        .map((snapshot) {
-          final entries = snapshot.docs.map((document) {
-            final data = document.data();
+        .map(_readEntries);
+  }
 
-            return TripRequestEntry(
-              id: document.id,
-              ownerId: data['ownerId'] as String,
-              booking: TripBooking.fromJson(
-                Map<String, dynamic>.from(data['trip'] as Map),
-              ),
-            );
-          }).toList();
+  static Stream<List<TripRequestEntry>> watchAssigned(String driverId) {
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-          entries.sort(
-            (a, b) => a.booking.departure.compareTo(b.booking.departure),
-          );
+    if (currentUser == null || currentUser.uid != driverId) {
+      throw StateError('Sign in with the correct driver account.');
+    }
 
-          return List<TripRequestEntry>.unmodifiable(entries);
-        });
+    // Keep cancelled trips visible if this driver accepted them earlier.
+    return requests
+        .where('driverId', isEqualTo: driverId)
+        .snapshots()
+        .map(_readEntries);
   }
 
   static Future<void> accept(String requestId) async {
@@ -52,6 +82,10 @@ class TripRequestStore {
 
     if (user == null) {
       throw StateError('Please sign in again.');
+    }
+
+    if (requestId.trim().isEmpty) {
+      throw ArgumentError('A trip request ID is required.');
     }
 
     final database = FirebaseFirestore.instance;
