@@ -1,15 +1,12 @@
 import 'dart:async';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
 import 'booking_store.dart';
 import 'trip_map_screen.dart';
 import 'trip_request_store.dart';
 
 class DriverAssignedTripsScreen extends StatefulWidget {
   const DriverAssignedTripsScreen({super.key});
-
   @override
   State<DriverAssignedTripsScreen> createState() =>
       _DriverAssignedTripsScreenState();
@@ -23,25 +20,19 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   static const borderColor = Color(0xFFE5EAF2);
   static const green = Color(0xFF159A75);
   static const red = Color(0xFFD94D64);
-
   StreamSubscription<User?>? authSubscription;
   Stream<List<TripRequestEntry>>? tripsStream;
-
   String? userId;
   String selectedFilter = 'All';
   int streamVersion = 0;
-
   final Set<String> busyTrips = {};
   final Set<String> confirmingTrips = {};
-
   @override
   void initState() {
     super.initState();
     setAccount(FirebaseAuth.instance.currentUser);
-
     authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted || user?.uid == userId) return;
-
       setState(() {
         selectedFilter = 'All';
         setAccount(user);
@@ -52,7 +43,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   void setAccount(User? user) {
     userId = user?.uid;
     streamVersion++;
-
     tripsStream = user == null
         ? null
         : TripRequestStore.watchAssigned(user.uid);
@@ -86,17 +76,16 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         entry.driverId != userId) {
       return;
     }
-
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TripMapScreen(booking: entry.booking),
+        builder: (_) =>
+            TripMapScreen(booking: entry.booking, requestId: entry.id),
       ),
     );
   }
 
   Future<void> updateTrip(TripRequestEntry entry) async {
     final accountId = userId;
-
     if (accountId == null ||
         FirebaseAuth.instance.currentUser?.uid != accountId ||
         entry.driverId != accountId ||
@@ -104,14 +93,10 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         confirmingTrips.contains(entry.id)) {
       return;
     }
-
     if (!entry.accepted && !entry.inProgress) return;
-
     final starting = entry.accepted;
     confirmingTrips.add(entry.id);
-
     bool? confirmed;
-
     try {
       confirmed = await showDialog<bool>(
         context: context,
@@ -140,31 +125,26 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
     } finally {
       confirmingTrips.remove(entry.id);
     }
-
     if (!mounted ||
         confirmed != true ||
         userId != accountId ||
         FirebaseAuth.instance.currentUser?.uid != accountId) {
       return;
     }
-
     setState(() {
       busyTrips.add(entry.id);
     });
-
     try {
       if (starting) {
         await TripRequestStore.start(entry.id);
       } else {
         await TripRequestStore.complete(entry.id);
       }
-
       if (!mounted ||
           userId != accountId ||
           FirebaseAuth.instance.currentUser?.uid != accountId) {
         return;
       }
-
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -178,12 +158,10 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
           FirebaseAuth.instance.currentUser?.uid != accountId) {
         return;
       }
-
       final message = error is StateError
           ? error.message.toString()
           : 'Could not update the trip. Check your connection '
                 'and permissions, then try again.';
-
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(message)));
@@ -300,13 +278,84 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
     );
   }
 
+  Widget ratingPanel(TripRequestEntry entry) {
+    final stars = entry.ratingStars;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE7AF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Passenger feedback',
+            style: TextStyle(color: navy, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (stars == null) ...[
+            const Text(
+              'Not rated yet',
+              style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'The passenger can rate this completed trip. '
+              'Their feedback will appear here after submission.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+            ),
+          ] else ...[
+            Semantics(
+              label: 'Passenger rating: $stars out of 5 stars',
+              child: ExcludeSemantics(
+                child: Wrap(
+                  spacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (int index = 1; index <= 5; index++)
+                      Icon(
+                        index <= stars
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        color: const Color(0xFFC48616),
+                        size: 25,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        '$stars/5',
+                        style: const TextStyle(
+                          color: navy,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              entry.ratingComment.isEmpty
+                  ? 'The passenger did not add a written review.'
+                  : entry.ratingComment,
+              style: const TextStyle(color: navy, fontSize: 13, height: 1.5),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget tripCard(TripRequestEntry entry) {
     final trip = entry.booking;
     final date = MaterialLocalizations.of(
       context,
     ).formatMediumDate(trip.departure);
     final time = TimeOfDay.fromDateTime(trip.departure).format(context);
-
     final statusColor = switch (entry.status) {
       'accepted' => blue,
       'in_progress' => const Color(0xFFC48616),
@@ -314,7 +363,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
       'cancelled' => red,
       _ => muted,
     };
-
     final statusMessage = switch (entry.status) {
       'accepted' => 'Start the trip when the journey begins.',
       'in_progress' => 'Complete the trip when the journey finishes.',
@@ -322,13 +370,10 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
       'cancelled' => 'The passenger cancelled this trip.',
       _ => 'Refresh the page to check this trip’s status.',
     };
-
     final hasMapLocations =
         validCoordinates(trip.pickupCoordinates) &&
         validCoordinates(trip.destinationCoordinates);
-
     final busy = busyTrips.contains(entry.id);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -450,6 +495,10 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
               height: 1.5,
             ),
           ),
+          if (entry.completed) ...[
+            const SizedBox(height: 16),
+            ratingPanel(entry),
+          ],
           if (entry.accepted || entry.inProgress) ...[
             const SizedBox(height: 16),
             SizedBox(
@@ -520,7 +569,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         message: 'Sign in with your driver account to view your trips.',
       );
     }
-
     return StreamBuilder<List<TripRequestEntry>>(
       key: ValueKey('$userId:$streamVersion'),
       stream: tripsStream,
@@ -532,7 +580,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
             allowRetry: true,
           );
         }
-
         if (snapshot.hasError) {
           return messageCard(
             title: 'Could not load your trips',
@@ -542,18 +589,15 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
             allowRetry: true,
           );
         }
-
         if (!snapshot.hasData) {
           return const Padding(
             padding: EdgeInsets.all(40),
             child: Center(child: CircularProgressIndicator(color: blue)),
           );
         }
-
         final allEntries = snapshot.data!
             .where((entry) => entry.driverId == userId)
             .toList();
-
         final entries = allEntries.where((entry) {
           return switch (selectedFilter) {
             'Accepted' => entry.accepted,
@@ -563,7 +607,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
             _ => true,
           };
         }).toList();
-
         if (entries.isEmpty) {
           return messageCard(
             title: allEntries.isEmpty
@@ -575,7 +618,6 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                 : 'Choose another filter to view your trips.',
           );
         }
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
