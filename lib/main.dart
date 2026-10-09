@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+
 import 'airport_transfer_screen.dart';
 import 'booking_store.dart';
 import 'bookings_screen.dart';
+import 'driver_dashboard_screen.dart';
 import 'firebase_options.dart';
 import 'forgot_password_screen.dart';
 import 'full_day_driver_screen.dart';
@@ -12,20 +14,24 @@ import 'location_picker_screen.dart';
 import 'plan_trip_screen.dart';
 import 'profile_screen.dart';
 import 'ride_now_screen.dart';
-import 'driver_dashboard_screen.dart';
+import 'welcome_screen.dart';
 
 const tripBlue = Color(0xFF2563EB);
 const tripNavy = Color(0xFF14213D);
 const tripBackground = Color(0xFFF5F7FB);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
     runApp(const TripLankaApp());
   } catch (error) {
     debugPrint('App startup failed: $error');
+
     runApp(
       const MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -53,9 +59,10 @@ class TripLankaApp extends StatelessWidget {
     this.loadMapTiles = true,
     this.useAuthentication = true,
   });
+
   final bool loadMapTiles;
-  // Use false only for Home-screen tests.
   final bool useAuthentication;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -110,17 +117,37 @@ class TripLankaApp extends StatelessWidget {
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key, required this.loadMapTiles});
+
   final bool loadMapTiles;
+
   @override
   State<AuthGate> createState() => _AuthGateState();
 }
 
 class _AuthGateState extends State<AuthGate> {
   late final Stream<User?> authStream;
+
+  bool showLogin = false;
+  bool startWithSignUp = false;
+  String? lastUserId;
+
   @override
   void initState() {
     super.initState();
     authStream = FirebaseAuth.instance.authStateChanges();
+  }
+
+  void openAuthentication({required bool signUp}) {
+    setState(() {
+      startWithSignUp = signUp;
+      showLogin = true;
+    });
+  }
+
+  void returnToWelcome() {
+    setState(() {
+      showLogin = false;
+    });
   }
 
   @override
@@ -135,15 +162,42 @@ class _AuthGateState extends State<AuthGate> {
             ),
           );
         }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
+
         final user = snapshot.data;
+
         if (user == null) {
-          return const LoginScreen();
+          // Return to welcome after signing out.
+          if (lastUserId != null) {
+            lastUserId = null;
+            showLogin = false;
+          }
+
+          if (!showLogin) {
+            return WelcomeScreen(
+              onGetStarted: () {
+                openAuthentication(signUp: true);
+              },
+              onSignIn: () {
+                openAuthentication(signUp: false);
+              },
+            );
+          }
+
+          return LoginScreen(
+            key: ValueKey(startWithSignUp),
+            initialCreatingAccount: startWithSignUp,
+            onBack: returnToWelcome,
+          );
         }
+
+        lastUserId = user.uid;
+
         return MainScreen(
           key: ValueKey(user.uid),
           loadMapTiles: widget.loadMapTiles,
@@ -155,7 +209,15 @@ class _AuthGateState extends State<AuthGate> {
 }
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.initialCreatingAccount = false,
+    this.onBack,
+  });
+
+  final bool initialCreatingAccount;
+  final VoidCallback? onBack;
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -164,10 +226,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-  bool creatingAccount = false;
+
+  late bool creatingAccount;
+
   bool busy = false;
   bool hidePassword = true;
   String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    creatingAccount = widget.initialCreatingAccount;
+  }
+
   @override
   void dispose() {
     emailController.dispose();
@@ -177,12 +248,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String? validateEmail(String? value) {
     final email = value?.trim() ?? '';
+
     if (email.isEmpty) {
       return 'Enter your email address';
     }
+
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
       return 'Enter a valid email address';
     }
+
     return null;
   }
 
@@ -215,14 +289,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (busy || !(formKey.currentState?.validate() ?? false)) {
       return;
     }
+
     FocusScope.of(context).unfocus();
+
     final email = emailController.text.trim();
     final password = passwordController.text;
     final createAccount = creatingAccount;
+
     setState(() {
       busy = true;
       message = null;
     });
+
     try {
       if (createAccount) {
         await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -235,14 +313,17 @@ class _LoginScreenState extends State<LoginScreen> {
           password: password,
         );
       }
-      // AuthGate opens Home after successful authentication.
+
+      // AuthGate opens Home after authentication.
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
+
       setState(() {
         message = authError(error);
       });
     } catch (_) {
       if (!mounted) return;
+
       setState(() {
         message = 'Could not complete the request. Please try again.';
       });
@@ -257,12 +338,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> resetPassword() async {
     if (busy) return;
+
     FocusScope.of(context).unfocus();
+
     final email = emailController.text.trim();
+
     setState(() {
       busy = true;
       message = null;
     });
+
     try {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
@@ -271,7 +356,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() => busy = false);
+        setState(() {
+          busy = false;
+        });
       }
     }
   }
@@ -279,6 +366,15 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.onBack == null
+          ? null
+          : AppBar(
+              leading: IconButton(
+                tooltip: 'Back to welcome',
+                onPressed: busy ? null : widget.onBack,
+                icon: const Icon(Icons.arrow_back),
+              ),
+            ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -353,9 +449,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Enter your password';
                       }
+
                       if (creatingAccount && value.length < 6) {
                         return 'Use at least 6 characters';
                       }
+
                       return null;
                     },
                     decoration: InputDecoration(
@@ -408,6 +506,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? null
                         : () {
                             formKey.currentState?.reset();
+
                             setState(() {
                               creatingAccount = !creatingAccount;
                               passwordController.clear();
@@ -441,8 +540,10 @@ class MainScreen extends StatefulWidget {
     this.loadMapTiles = true,
     this.showAccount = false,
   });
+
   final bool loadMapTiles;
   final bool showAccount;
+
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -450,15 +551,19 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
   bool signingOut = false;
+
   Future<void> signOut() async {
     if (signingOut) return;
+
     setState(() {
       signingOut = true;
     });
+
     try {
       await FirebaseAuth.instance.signOut();
     } catch (_) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not sign out. Please try again.')),
       );
@@ -494,7 +599,6 @@ class _MainScreenState extends State<MainScreen> {
         index: selectedIndex,
         children: [
           HomeScreen(loadMapTiles: widget.loadMapTiles),
-          // Avoid accessing Firebase in authentication-free Home tests.
           if (widget.showAccount)
             const BookingsScreen()
           else
@@ -536,7 +640,9 @@ class _MainScreenState extends State<MainScreen> {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.loadMapTiles = true});
+
   final bool loadMapTiles;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -544,8 +650,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final pickupController = TextEditingController();
   final destinationController = TextEditingController();
+
   TripCoordinates? pickupCoordinates;
   TripCoordinates? destinationCoordinates;
+
   @override
   void dispose() {
     pickupController.dispose();
@@ -555,6 +663,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> searchLocation({required bool isPickup}) async {
     FocusScope.of(context).unfocus();
+
     final selected = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
         builder: (_) => LocationPickerScreen(
@@ -563,11 +672,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+
     if (!mounted || selected == null) return;
+
     final coordinates = TripCoordinates(
       latitude: selected.point.latitude,
       longitude: selected.point.longitude,
     );
+
     setState(() {
       if (isPickup) {
         pickupController.text = selected.name;
@@ -581,11 +693,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void openBooking(String service) {
     FocusScope.of(context).unfocus();
+
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
     final selectedPickup = pickupCoordinates;
     final selectedDestination = destinationCoordinates;
+
     final Widget screen;
+
     switch (service) {
       case 'Ride now':
         screen = RideNowScreen(
@@ -595,6 +710,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destinationCoordinates: selectedDestination,
         );
         break;
+
       case 'Plan a trip':
         screen = PlanTripScreen(
           pickup: pickup,
@@ -603,6 +719,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destinationCoordinates: selectedDestination,
         );
         break;
+
       case 'Airport transfer':
         screen = AirportTransferScreen(
           pickup: pickup,
@@ -611,6 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destinationCoordinates: selectedDestination,
         );
         break;
+
       case 'Full-day driver':
         screen = FullDayDriverScreen(
           pickup: pickup,
@@ -619,6 +737,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destinationCoordinates: selectedDestination,
         );
         break;
+
       default:
         screen = BookingScreen(
           service: service,
@@ -626,6 +745,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destination: destination,
         );
     }
+
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
@@ -820,8 +940,10 @@ class _HomeScreenState extends State<HomeScreen> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final columns = constraints.maxWidth < 300 ? 1 : 2;
+
                   final width =
                       (constraints.maxWidth - (columns - 1) * 12) / columns;
+
                   return Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -896,8 +1018,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Demo bookings. Driver matching and live '
-                      'tracking are not connected yet.',
+                      'Travel booking prototype. '
+                      'Live tracking is not connected yet.',
                       style: TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ),
@@ -920,10 +1042,12 @@ class ServiceCard extends StatelessWidget {
     required this.icon,
     required this.onTap,
   });
+
   final String title;
   final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -980,9 +1104,11 @@ class BookingScreen extends StatelessWidget {
     required this.pickup,
     required this.destination,
   });
+
   final String service;
   final String pickup;
   final String destination;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
