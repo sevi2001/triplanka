@@ -23,6 +23,11 @@ class RideNowScreen extends StatefulWidget {
 }
 
 class _RideNowScreenState extends State<RideNowScreen> {
+  static const blue = Color(0xFF2563EB);
+  static const navy = Color(0xFF14213D);
+  static const muted = Color(0xFF738097);
+  static const background = Color(0xFFF5F7FB);
+
   final formKey = GlobalKey<FormState>();
 
   late final TextEditingController pickupController;
@@ -81,6 +86,21 @@ class _RideNowScreenState extends State<RideNowScreen> {
     });
   }
 
+  void swapLocations() {
+    FocusScope.of(context).unfocus();
+
+    final previousPickup = pickupController.text;
+    final previousPickupCoordinates = pickupCoordinates;
+
+    setState(() {
+      pickupController.text = destinationController.text;
+      destinationController.text = previousPickup;
+
+      pickupCoordinates = destinationCoordinates;
+      destinationCoordinates = previousPickupCoordinates;
+    });
+  }
+
   void showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -90,7 +110,7 @@ class _RideNowScreenState extends State<RideNowScreen> {
   void continueBooking() {
     FocusScope.of(context).unfocus();
 
-    if (!formKey.currentState!.validate()) return;
+    if (!(formKey.currentState?.validate() ?? false)) return;
 
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
@@ -126,55 +146,201 @@ class _RideNowScreenState extends State<RideNowScreen> {
     );
   }
 
-  Widget locationField({
-    required String label,
+  Widget section({
+    required String title,
     required IconData icon,
-    required TextEditingController controller,
-    required ValueChanged<String> onChanged,
+    required Widget child,
   }) {
-    return TextFormField(
-      controller: controller,
-      onChanged: onChanged,
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Colors.teal),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE5EAF2)),
       ),
-      validator: (value) {
-        if (value == null || value.trim().isEmpty) {
-          return 'Enter a location';
-        }
-
-        return null;
-      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: blue, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
     );
   }
 
-  Widget locationSearch({
-    required bool isPickup,
-    required TripCoordinates? coordinates,
-  }) {
+  Widget locationField({required bool isPickup}) {
+    final controller = isPickup ? pickupController : destinationController;
+
+    final coordinates = isPickup ? pickupCoordinates : destinationCoordinates;
+
+    final label = isPickup ? 'Pickup location' : 'Destination';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextButton.icon(
-          onPressed: () => searchLocation(isPickup: isPickup),
-          icon: const Icon(Icons.search),
-          label: Text(isPickup ? 'Search pickup' : 'Search destination'),
-        ),
-        if (coordinates != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Map location selected: '
-              '${coordinates.latitude.toStringAsFixed(5)}, '
-              '${coordinates.longitude.toStringAsFixed(5)}',
-              style: const TextStyle(color: Colors.teal, fontSize: 12),
+        TextFormField(
+          controller: controller,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: isPickup
+              ? TextInputAction.next
+              : TextInputAction.done,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          onChanged: (_) {
+            if (coordinates == null) return;
+
+            setState(() {
+              if (isPickup) {
+                pickupCoordinates = null;
+              } else {
+                destinationCoordinates = null;
+              }
+            });
+          },
+          onFieldSubmitted: isPickup
+              ? null
+              : (_) => FocusScope.of(context).unfocus(),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return isPickup
+                  ? 'Enter your pickup location'
+                  : 'Enter your destination';
+            }
+
+            return null;
+          },
+          style: const TextStyle(color: navy),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(color: muted),
+            prefixIcon: Icon(
+              isPickup ? Icons.my_location : Icons.location_on_outlined,
+              color: isPickup ? blue : const Color(0xFFE85D75),
+            ),
+            suffixIcon: IconButton(
+              tooltip: isPickup ? 'Search pickup' : 'Search destination',
+              onPressed: () => searchLocation(isPickup: isPickup),
+              icon: const Icon(Icons.search, color: blue),
+            ),
+            filled: true,
+            fillColor: background,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: blue, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Colors.red, width: 1.5),
             ),
           ),
+        ),
+        if (coordinates != null)
+          const Padding(
+            padding: EdgeInsets.only(top: 8, left: 4),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Color(0xFF159A75), size: 16),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Map location selected',
+                    style: TextStyle(color: Color(0xFF159A75), fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget passengerSelector() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Passengers',
+                style: TextStyle(
+                  color: navy,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Including you',
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        IconButton.filledTonal(
+          tooltip: 'Fewer passengers',
+          onPressed: passengers > 1 ? () => setState(() => passengers--) : null,
+          style: IconButton.styleFrom(
+            foregroundColor: blue,
+            backgroundColor: const Color(0xFFEEF4FF),
+          ),
+          icon: const Icon(Icons.remove),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            '$passengers',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: navy,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        IconButton.filledTonal(
+          tooltip: 'More passengers',
+          onPressed: passengers < 15
+              ? () => setState(() => passengers++)
+              : null,
+          style: IconButton.styleFrom(
+            foregroundColor: blue,
+            backgroundColor: const Color(0xFFEEF4FF),
+          ),
+          icon: const Icon(Icons.add),
+        ),
       ],
     );
   }
@@ -182,119 +348,179 @@ class _RideNowScreenState extends State<RideNowScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ride now')),
+      backgroundColor: background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: Form(
-              key: formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const Icon(Icons.local_taxi, size: 64, color: Colors.teal),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Where would you like to go?',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Back',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back, color: navy),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Ride now',
+                        style: TextStyle(
+                          color: navy,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Search for places or enter your journey details.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 24),
-                  locationField(
-                    label: 'Pickup location',
-                    icon: Icons.my_location,
-                    controller: pickupController,
-                    onChanged: (_) {
-                      if (pickupCoordinates == null) return;
-
-                      setState(() {
-                        pickupCoordinates = null;
-                      });
-                    },
-                  ),
-                  locationSearch(
-                    isPickup: true,
-                    coordinates: pickupCoordinates,
-                  ),
-                  const SizedBox(height: 16),
-                  locationField(
-                    label: 'Destination',
-                    icon: Icons.location_on,
-                    controller: destinationController,
-                    onChanged: (_) {
-                      if (destinationCoordinates == null) return;
-
-                      setState(() {
-                        destinationCoordinates = null;
-                      });
-                    },
-                  ),
-                  locationSearch(
-                    isPickup: false,
-                    coordinates: destinationCoordinates,
-                  ),
-                  const SizedBox(height: 20),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.people, color: Colors.teal),
-                          const SizedBox(width: 12),
-                          const Expanded(child: Text('Passengers')),
-                          IconButton(
-                            tooltip: 'Fewer passengers',
-                            onPressed: passengers > 1
-                                ? () {
-                                    setState(() {
-                                      passengers--;
-                                    });
-                                  }
-                                : null,
-                            icon: const Icon(Icons.remove),
-                          ),
-                          Text(
-                            '$passengers',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                ),
+                Expanded(
+                  child: Form(
+                    key: formKey,
+                    child: ListView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(22),
+                          margin: const EdgeInsets.only(bottom: 22),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF2563EB), Color(0xFF1547B8)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                          IconButton(
-                            tooltip: 'More passengers',
-                            onPressed: passengers < 15
-                                ? () {
-                                    setState(() {
-                                      passengers++;
-                                    });
-                                  }
-                                : null,
-                            icon: const Icon(Icons.add),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.local_taxi_outlined,
+                                color: Colors.white,
+                                size: 36,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Where would you like to go?',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Choose your locations and find a vehicle '
+                                'that fits your group.',
+                                style: TextStyle(
+                                  color: Color(0xFFDCE8FF),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                        section(
+                          title: 'Your journey',
+                          icon: Icons.route_outlined,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              locationField(isPickup: true),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: swapLocations,
+                                  icon: const Icon(Icons.swap_vert, size: 20),
+                                  label: const Text('Swap locations'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: blue,
+                                  ),
+                                ),
+                              ),
+                              locationField(isPickup: false),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Tap the search icon to find a place '
+                                'and save its map location.',
+                                style: TextStyle(
+                                  color: muted,
+                                  fontSize: 12,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        section(
+                          title: 'Travel group',
+                          icon: Icons.groups_outlined,
+                          child: passengerSelector(),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF4FF),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline, color: blue, size: 22),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Demo booking. Nearby drivers, live '
+                                  'tracking, and fare estimates are '
+                                  'not connected yet.',
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 13,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE5EAF2))),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: continueBooking,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: blue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: const Icon(Icons.directions_car_outlined),
+                      label: const Text(
+                        'Choose vehicle',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Demo only. Nearby drivers, live tracking, '
-                    'and fare estimates are not connected yet.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: continueBooking,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                    ),
-                    child: const Text('Choose vehicle'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

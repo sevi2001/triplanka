@@ -1,11 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-
 import 'airport_transfer_screen.dart';
 import 'booking_store.dart';
 import 'bookings_screen.dart';
 import 'firebase_options.dart';
+import 'forgot_password_screen.dart';
 import 'full_day_driver_screen.dart';
 import 'home_map.dart';
 import 'location_picker_screen.dart';
@@ -17,19 +17,15 @@ import 'driver_dashboard_screen.dart';
 const tripBlue = Color(0xFF2563EB);
 const tripNavy = Color(0xFF14213D);
 const tripBackground = Color(0xFFF5F7FB);
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-
     runApp(const TripLankaApp());
   } catch (error) {
     debugPrint('App startup failed: $error');
-
     runApp(
       const MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -57,12 +53,9 @@ class TripLankaApp extends StatelessWidget {
     this.loadMapTiles = true,
     this.useAuthentication = true,
   });
-
   final bool loadMapTiles;
-
   // Use false only for Home-screen tests.
   final bool useAuthentication;
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -117,16 +110,13 @@ class TripLankaApp extends StatelessWidget {
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key, required this.loadMapTiles});
-
   final bool loadMapTiles;
-
   @override
   State<AuthGate> createState() => _AuthGateState();
 }
 
 class _AuthGateState extends State<AuthGate> {
   late final Stream<User?> authStream;
-
   @override
   void initState() {
     super.initState();
@@ -145,19 +135,15 @@ class _AuthGateState extends State<AuthGate> {
             ),
           );
         }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
         final user = snapshot.data;
-
         if (user == null) {
           return const LoginScreen();
         }
-
         return MainScreen(
           key: ValueKey(user.uid),
           loadMapTiles: widget.loadMapTiles,
@@ -170,7 +156,6 @@ class _AuthGateState extends State<AuthGate> {
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
-
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -179,12 +164,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-
   bool creatingAccount = false;
   bool busy = false;
   bool hidePassword = true;
   String? message;
-
   @override
   void dispose() {
     emailController.dispose();
@@ -194,15 +177,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String? validateEmail(String? value) {
     final email = value?.trim() ?? '';
-
     if (email.isEmpty) {
       return 'Enter your email address';
     }
-
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
       return 'Enter a valid email address';
     }
-
     return null;
   }
 
@@ -235,18 +215,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (busy || !(formKey.currentState?.validate() ?? false)) {
       return;
     }
-
     FocusScope.of(context).unfocus();
-
     final email = emailController.text.trim();
     final password = passwordController.text;
     final createAccount = creatingAccount;
-
     setState(() {
       busy = true;
       message = null;
     });
-
     try {
       if (createAccount) {
         await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -259,17 +235,14 @@ class _LoginScreenState extends State<LoginScreen> {
           password: password,
         );
       }
-
       // AuthGate opens Home after successful authentication.
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
-
       setState(() {
         message = authError(error);
       });
     } catch (_) {
       if (!mounted) return;
-
       setState(() {
         message = 'Could not complete the request. Please try again.';
       });
@@ -284,52 +257,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> resetPassword() async {
     if (busy) return;
-
-    final emailError = validateEmail(emailController.text);
-
-    if (emailError != null) {
-      setState(() {
-        message = emailError;
-      });
-      return;
-    }
-
     FocusScope.of(context).unfocus();
-
     final email = emailController.text.trim();
-
     setState(() {
       busy = true;
       message = null;
     });
-
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-
-      if (!mounted) return;
-
-      setState(() {
-        message =
-            'If an account uses this email, check your inbox '
-            'and spam folder for a password reset link.';
-      });
-    } on FirebaseAuthException catch (error) {
-      if (!mounted) return;
-
-      setState(() {
-        message = authError(error);
-      });
-    } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        message = 'Could not request a reset. Please try again.';
-      });
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => ForgotPasswordScreen(initialEmail: email),
+        ),
+      );
     } finally {
       if (mounted) {
-        setState(() {
-          busy = false;
-        });
+        setState(() => busy = false);
       }
     }
   }
@@ -411,11 +353,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Enter your password';
                       }
-
                       if (creatingAccount && value.length < 6) {
                         return 'Use at least 6 characters';
                       }
-
                       return null;
                     },
                     decoration: InputDecoration(
@@ -468,7 +408,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? null
                         : () {
                             formKey.currentState?.reset();
-
                             setState(() {
                               creatingAccount = !creatingAccount;
                               passwordController.clear();
@@ -502,10 +441,8 @@ class MainScreen extends StatefulWidget {
     this.loadMapTiles = true,
     this.showAccount = false,
   });
-
   final bool loadMapTiles;
   final bool showAccount;
-
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -513,19 +450,15 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
   bool signingOut = false;
-
   Future<void> signOut() async {
     if (signingOut) return;
-
     setState(() {
       signingOut = true;
     });
-
     try {
       await FirebaseAuth.instance.signOut();
     } catch (_) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not sign out. Please try again.')),
       );
@@ -603,9 +536,7 @@ class _MainScreenState extends State<MainScreen> {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.loadMapTiles = true});
-
   final bool loadMapTiles;
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -613,10 +544,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final pickupController = TextEditingController();
   final destinationController = TextEditingController();
-
   TripCoordinates? pickupCoordinates;
   TripCoordinates? destinationCoordinates;
-
   @override
   void dispose() {
     pickupController.dispose();
@@ -626,7 +555,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> searchLocation({required bool isPickup}) async {
     FocusScope.of(context).unfocus();
-
     final selected = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute<SelectedLocation>(
         builder: (_) => LocationPickerScreen(
@@ -635,14 +563,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-
     if (!mounted || selected == null) return;
-
     final coordinates = TripCoordinates(
       latitude: selected.point.latitude,
       longitude: selected.point.longitude,
     );
-
     setState(() {
       if (isPickup) {
         pickupController.text = selected.name;
@@ -656,14 +581,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void openBooking(String service) {
     FocusScope.of(context).unfocus();
-
     final pickup = pickupController.text.trim();
     final destination = destinationController.text.trim();
     final selectedPickup = pickupCoordinates;
     final selectedDestination = destinationCoordinates;
-
     final Widget screen;
-
     switch (service) {
       case 'Ride now':
         screen = RideNowScreen(
@@ -704,7 +626,6 @@ class _HomeScreenState extends State<HomeScreen> {
           destination: destination,
         );
     }
-
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
@@ -901,7 +822,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   final columns = constraints.maxWidth < 300 ? 1 : 2;
                   final width =
                       (constraints.maxWidth - (columns - 1) * 12) / columns;
-
                   return Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -1000,12 +920,10 @@ class ServiceCard extends StatelessWidget {
     required this.icon,
     required this.onTap,
   });
-
   final String title;
   final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
-
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -1062,11 +980,9 @@ class BookingScreen extends StatelessWidget {
     required this.pickup,
     required this.destination,
   });
-
   final String service;
   final String pickup;
   final String destination;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

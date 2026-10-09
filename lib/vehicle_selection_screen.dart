@@ -3,16 +3,21 @@ import 'package:flutter/material.dart';
 import 'booking_store.dart';
 import 'cloud_booking_store.dart';
 
+const _vehicleBlue = Color(0xFF2563EB);
+const _vehicleNavy = Color(0xFF14213D);
+
 class VehicleOption {
   const VehicleOption({
     required this.name,
     required this.capacity,
     required this.icon,
+    this.imagePath,
   });
 
   final String name;
   final int capacity;
   final IconData icon;
+  final String? imagePath;
 }
 
 class VehicleSelectionScreen extends StatefulWidget {
@@ -50,10 +55,30 @@ class VehicleSelectionScreen extends StatefulWidget {
 
 class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
   static const vehicles = [
-    VehicleOption(name: 'Tuk-tuk', capacity: 3, icon: Icons.electric_rickshaw),
-    VehicleOption(name: 'Car', capacity: 4, icon: Icons.directions_car),
-    VehicleOption(name: 'Van', capacity: 8, icon: Icons.airport_shuttle),
-    VehicleOption(name: 'Minibus', capacity: 15, icon: Icons.directions_bus),
+    VehicleOption(
+      name: 'Tuk-tuk',
+      capacity: 3,
+      icon: Icons.electric_rickshaw,
+      imagePath: 'assets/vehicles/tuk_tuk.png',
+    ),
+    VehicleOption(
+      name: 'Car',
+      capacity: 4,
+      icon: Icons.directions_car,
+      imagePath: 'assets/vehicles/car.png',
+    ),
+    VehicleOption(
+      name: 'Van',
+      capacity: 8,
+      icon: Icons.airport_shuttle,
+      imagePath: 'assets/vehicles/van.png',
+    ),
+    VehicleOption(
+      name: 'Minibus',
+      capacity: 15,
+      icon: Icons.directions_bus,
+      imagePath: 'assets/vehicles/minibus.png',
+    ),
   ];
 
   VehicleOption? selectedVehicle;
@@ -86,91 +111,300 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
     );
   }
 
+  Widget vehicleIcon(VehicleOption vehicle, bool fits) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5FB),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        vehicle.icon,
+        size: 46,
+        color: fits ? _vehicleBlue : Colors.grey,
+      ),
+    );
+  }
+
+  Widget vehicleImage(VehicleOption vehicle, bool fits) {
+    final imagePath = vehicle.imagePath;
+
+    return SizedBox(
+      width: 80,
+      height: 64,
+      child: Opacity(
+        opacity: fits ? 1 : 0.55,
+        child: imagePath == null
+            ? vehicleIcon(vehicle, fits)
+            : Image.asset(
+                imagePath,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return vehicleIcon(vehicle, fits);
+                },
+              ),
+      ),
+    );
+  }
+
   Widget buildVehicleCard(VehicleOption vehicle) {
     final fits = vehicle.capacity >= widget.passengers;
     final selected = selectedVehicle == vehicle;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      color: selected ? const Color(0xFFE0F2F1) : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: selected ? Colors.teal : Colors.grey.shade300,
-          width: selected ? 2 : 1,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: selected ? const Color(0xFFEDF4FF) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: selected ? _vehicleBlue : const Color(0xFFE1E7F0),
+            width: selected ? 1.8 : 1,
+          ),
         ),
-      ),
-      child: ListTile(
-        enabled: fits,
-        contentPadding: const EdgeInsets.all(16),
-        leading: Icon(
-          vehicle.icon,
-          size: 36,
-          color: fits ? Colors.teal : Colors.grey,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: fits
+              ? () {
+                  setState(() {
+                    selectedVehicle = vehicle;
+                  });
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                vehicleImage(vehicle, fits),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        vehicle.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _vehicleNavy,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.people_alt,
+                            size: 16,
+                            color: Color(0xFF738097),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '${vehicle.capacity} seats',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF738097),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (!fits)
+                  SizedBox(
+                    width: 78,
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F2F6),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'Too small',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF68758B),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Not enough seats\nfor ${widget.passengers}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF738097),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: selected ? _vehicleBlue : const Color(0xFFAAB5C6),
+                    size: 26,
+                  ),
+              ],
+            ),
+          ),
         ),
-        title: Text(
-          vehicle.name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          fits
-              ? '${vehicle.capacity} passenger seats'
-              : '${vehicle.capacity} seats — too small for your group',
-        ),
-        trailing: Icon(
-          selected
-              ? Icons.check_circle
-              : fits
-              ? Icons.radio_button_unchecked
-              : Icons.block,
-          color: fits ? Colors.teal : Colors.grey,
-        ),
-        onTap: fits
-            ? () {
-                setState(() {
-                  selectedVehicle = vehicle;
-                });
-              }
-            : null,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final vehicle = selectedVehicle;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose vehicle')),
+      backgroundColor: const Color(0xFFF5F7FB),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 500),
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                const Text(
-                  'Travel comfortably',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text('Choose a vehicle for ${widget.passengers} passengers.'),
-                const SizedBox(height: 8),
-                const Text(
-                  'Sample vehicle capacities. '
-                  'Driver availability is not connected yet. '
-                  'Luggage capacity must be confirmed separately.',
-                  style: TextStyle(color: Colors.black54),
-                ),
-                const SizedBox(height: 24),
-                for (final vehicle in vehicles) buildVehicleCard(vehicle),
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: selectedVehicle == null ? null : reviewTrip,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
+            child: ColoredBox(
+              color: Colors.white,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 8, 16, 4),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: _vehicleNavy,
+                          ),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Choose vehicle',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: _vehicleNavy,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: const Text('Review trip'),
-                ),
-              ],
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      children: [
+                        Text(
+                          'Select a vehicle for '
+                          '${widget.passengers} passengers',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: _vehicleNavy,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        for (final option in vehicles) buildVehicleCard(option),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F6FC),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Your selection',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF738097),
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.info_outline,
+                                    size: 18,
+                                    color: Color(0xFF738097),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                vehicle?.name ?? 'Choose a vehicle',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: _vehicleBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Fare estimates are not connected yet.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF738097),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'Sample seat capacities. Confirm luggage space '
+                          'separately. Driver availability is not connected.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF738097),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(top: BorderSide(color: Color(0xFFEDF0F5))),
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: vehicle == null ? null : reviewTrip,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _vehicleBlue,
+                          padding: const EdgeInsets.symmetric(vertical: 17),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Review trip',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -221,6 +455,15 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
   Future<void> confirmBooking() async {
     if (saved || saving) return;
 
+    if (widget.passengers < 1 || widget.passengers > widget.vehicle.capacity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose a vehicle with enough passenger seats.'),
+        ),
+      );
+      return;
+    }
+
     if (!widget.isInstantRide && !widget.departure.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -265,7 +508,10 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not save your booking. Please try again.'),
+          content: Text(
+            'Could not save your booking. '
+            'Check your connection and try again.',
+          ),
         ),
       );
     } finally {
@@ -278,11 +524,42 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
   }
 
   Widget detail(String title, String value, IconData icon) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: Colors.teal),
-        title: Text(title),
-        subtitle: Text(value),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1E7F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: _vehicleBlue, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF738097),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: _vehicleNavy,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -295,9 +572,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
   }) {
     final value = coordinates == null
         ? '$name\nMap location not selected.'
-        : '$name\n'
-              'Latitude: ${coordinates.latitude.toStringAsFixed(5)}\n'
-              'Longitude: ${coordinates.longitude.toStringAsFixed(5)}';
+        : '$name\nMap location selected.';
 
     return detail(title, value, icon);
   }
@@ -321,6 +596,7 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
     final time = TimeOfDay.fromDateTime(widget.departure).format(context);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FB),
       appBar: AppBar(title: Text(saved ? 'Booking saved' : 'Review trip')),
       body: SafeArea(
         child: Center(
@@ -330,24 +606,38 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 if (saved) ...[
-                  const Icon(Icons.check_circle, size: 72, color: Colors.teal),
+                  const Icon(Icons.check_circle, size: 72, color: _vehicleBlue),
                   const SizedBox(height: 16),
                   const Text(
                     'Demo booking saved!',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: _vehicleNavy,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Return to Home and open the Bookings tab '
-                    'to see your trip.',
+                    'Saved to your account. Return to Home '
+                    'and open Bookings to see your trip.',
                     textAlign: TextAlign.center,
                   ),
-                ] else
+                ] else ...[
                   const Text(
                     'Your journey',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: _vehicleNavy,
+                    ),
                   ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Check your details before saving.',
+                    style: TextStyle(color: Color(0xFF738097)),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 locationDetail(
                   title: 'Pickup',
@@ -379,18 +669,20 @@ class _TripReviewScreenState extends State<TripReviewScreen> {
                 detail('Vehicle', widget.vehicle.name, widget.vehicle.icon),
                 if (widget.notes.isNotEmpty)
                   detail('Additional details', widget.notes, Icons.notes),
-                const SizedBox(height: 20),
+                const SizedBox(height: 8),
                 const Text(
-                  'Demo only: no payment is taken and no driver '
-                  'is contacted. Bookings are saved on this device.',
-                  style: TextStyle(color: Colors.black54),
+                  'Demo only. No payment is taken and no driver '
+                  'is contacted. Confirmed bookings are saved '
+                  'to your signed-in account.',
+                  style: TextStyle(color: Color(0xFF738097), fontSize: 12),
                 ),
                 const SizedBox(height: 24),
                 if (!saved) ...[
                   FilledButton(
                     onPressed: saving ? null : confirmBooking,
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      backgroundColor: _vehicleBlue,
+                      padding: const EdgeInsets.symmetric(vertical: 17),
                     ),
                     child: Text(saving ? 'Saving...' : 'Confirm demo booking'),
                   ),

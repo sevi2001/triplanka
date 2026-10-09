@@ -3,10 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 class HomeMap extends StatelessWidget {
-  const HomeMap({
-    super.key,
-    this.loadTiles = true,
-  });
+  const HomeMap({super.key, this.loadTiles = true});
 
   final bool loadTiles;
 
@@ -26,8 +23,7 @@ class HomeMap extends StatelessWidget {
           children: [
             if (loadTiles)
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.sevi2001.triplanka',
               ),
 
@@ -58,10 +54,7 @@ class HomeMap extends StatelessWidget {
                   padding: EdgeInsets.all(5),
                   child: Text(
                     '© OpenStreetMap contributors',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.black87,
-                    ),
+                    style: TextStyle(fontSize: 11, color: Colors.black87),
                   ),
                 ),
               ),

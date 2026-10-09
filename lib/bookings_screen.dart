@@ -1,13 +1,11 @@
 import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'booking_store.dart';
 import 'cloud_booking_store.dart';
+import 'driver_rating_screen.dart';
 import 'split_cost_screen.dart';
 import 'travel_safety_screen.dart';
 import 'trip_map_screen.dart';
@@ -23,7 +21,6 @@ const _amber = Color(0xFFC48616);
 
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
-
   @override
   State<BookingsScreen> createState() => _BookingsScreenState();
 }
@@ -31,19 +28,15 @@ class BookingsScreen extends StatefulWidget {
 class _BookingsScreenState extends State<BookingsScreen> {
   StreamSubscription<User?>? authSubscription;
   Stream<List<CloudBookingEntry>>? bookingStream;
-
   String? userId;
   int streamVersion = 0;
   String selectedFilter = 'All';
-
   @override
   void initState() {
     super.initState();
     setAccount(FirebaseAuth.instance.currentUser);
-
     authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted || user?.uid == userId) return;
-
       setState(() {
         selectedFilter = 'All';
         setAccount(user);
@@ -122,7 +115,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
         message: 'Your saved trips will appear here.',
       );
     }
-
     return StreamBuilder<List<CloudBookingEntry>>(
       key: ValueKey('$userId:$streamVersion'),
       stream: bookingStream,
@@ -134,7 +126,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
             retryAllowed: true,
           );
         }
-
         if (snapshot.hasError) {
           return statusMessage(
             title: 'Could not load bookings',
@@ -144,14 +135,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
             retryAllowed: true,
           );
         }
-
         if (!snapshot.hasData) {
           return const Padding(
             padding: EdgeInsets.all(48),
             child: Center(child: CircularProgressIndicator(color: _blue)),
           );
         }
-
         final allEntries = snapshot.data!;
         final entries = allEntries.where((entry) {
           return switch (selectedFilter) {
@@ -162,7 +151,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
             _ => true,
           };
         }).toList();
-
         if (entries.isEmpty) {
           return statusMessage(
             title: allEntries.isEmpty
@@ -175,7 +163,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
                 : 'Choose another filter or create a new trip.',
           );
         }
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -191,6 +178,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
               BookingCard(
                 key: ValueKey('${entry.userId}:${entry.id}'),
                 entry: entry,
+                onRetry: retry,
               ),
           ],
         );
@@ -209,13 +197,24 @@ class _BookingsScreenState extends State<BookingsScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const Text(
-                  'My bookings',
-                  style: TextStyle(
-                    color: _navy,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'My bookings',
+                        style: TextStyle(
+                          color: _navy,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh bookings',
+                      onPressed: retry,
+                      icon: const Icon(Icons.refresh, color: _blue),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
@@ -260,9 +259,9 @@ class _BookingsScreenState extends State<BookingsScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Upcoming includes trips waiting for a driver, accepted trips, '
-                  'and earlier bookings without a driver request. '
-                  'Started and completed journeys appear in their own tabs.',
+                  'Upcoming includes trips waiting for a driver, '
+                  'accepted trips and earlier bookings without a request. '
+                  'Trips are grouped by status, not departure date.',
                   style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
                 ),
                 const SizedBox(height: 22),
@@ -277,77 +276,23 @@ class _BookingsScreenState extends State<BookingsScreen> {
 }
 
 class BookingCard extends StatefulWidget {
-  const BookingCard({super.key, required this.entry});
-
+  const BookingCard({super.key, required this.entry, this.onRetry});
   final CloudBookingEntry entry;
-
+  final VoidCallback? onRetry;
   @override
   State<BookingCard> createState() => _BookingCardState();
 }
 
 class _BookingCardState extends State<BookingCard> {
-  Stream<DocumentSnapshot<Map<String, dynamic>>>? requestStream;
-  int requestVersion = 0;
-
   bool cancelling = false;
   bool confirmingCancellation = false;
   bool openingPhone = false;
-
-  TripBooking get booking => widget.entry.booking;
-
+  bool ratingFlowOpen = false;
+  bool savingRating = false;
+  CloudBookingEntry get entry => widget.entry;
+  TripBooking get booking => entry.booking;
   bool get sameAccount =>
-      FirebaseAuth.instance.currentUser?.uid == widget.entry.userId;
-
-  @override
-  void initState() {
-    super.initState();
-    prepareRequest();
-  }
-
-  @override
-  void didUpdateWidget(covariant BookingCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (oldWidget.entry.requestId != widget.entry.requestId ||
-        oldWidget.entry.userId != widget.entry.userId) {
-      prepareRequest();
-    }
-  }
-
-  void prepareRequest() {
-    final requestId = widget.entry.requestId?.trim();
-    requestVersion++;
-
-    requestStream = requestId == null || requestId.isEmpty
-        ? null
-        : FirebaseFirestore.instance
-              .collection('tripRequests')
-              .doc(requestId)
-              .snapshots();
-  }
-
-  void retryRequest() {
-    setState(prepareRequest);
-  }
-
-  String readText(Map<String, dynamic>? data, String key) {
-    final value = data?[key];
-    return value is String ? value.trim() : '';
-  }
-
-  bool hasAssignedDriver(String status) {
-    return status == 'Driver accepted' ||
-        status == 'Trip in progress' ||
-        status == 'Trip completed';
-  }
-
-  bool canCancelStatus(String status) {
-    return !widget.entry.cancelled &&
-        (status == 'Waiting for driver' ||
-            status == 'Driver accepted' ||
-            status == 'Earlier booking');
-  }
-
+      FirebaseAuth.instance.currentUser?.uid == entry.userId;
   bool validCoordinates(TripCoordinates? point) {
     return point != null &&
         point.latitude.isFinite &&
@@ -358,31 +303,46 @@ class _BookingCardState extends State<BookingCard> {
         point.longitude <= 180;
   }
 
+  Color get statusColor {
+    if (entry.cancelled) return _red;
+    return switch (entry.status) {
+      'in_progress' => _amber,
+      'accepted' || 'completed' => _green,
+      'pending' => _blue,
+      _ => _muted,
+    };
+  }
+
+  String get badgeLabel {
+    if (entry.cancelled) return 'Cancelled';
+    return switch (entry.status) {
+      'pending' => 'Waiting',
+      'accepted' => 'Accepted',
+      'in_progress' => 'In progress',
+      'completed' => 'Completed',
+      'legacy' => 'Earlier booking',
+      _ => 'Unavailable',
+    };
+  }
+
   void showMessage(String message) {
     if (!mounted || !sameAccount) return;
-
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> openPhoneApp(String phone) async {
-    if (!sameAccount || openingPhone || widget.entry.cancelled) return;
-
-    final number = phone.trim().replaceAll(RegExp(r'[\s()-]'), '');
-
+  Future<void> openPhoneApp() async {
+    if (!sameAccount || openingPhone || !entry.hasAssignedDriver) return;
+    final number = entry.driverPhone.trim().replaceAll(RegExp(r'[\s()-]'), '');
     if (!RegExp(r'^\+?[0-9]{9,15}$').hasMatch(number)) {
       showMessage('The driver phone number is unavailable or invalid.');
       return;
     }
-
     setState(() => openingPhone = true);
-
     try {
       final opened = await launchUrl(Uri(scheme: 'tel', path: number));
-
       if (!mounted || !sameAccount) return;
-
       if (!opened) {
         showMessage(
           'No phone app is available. Select and copy the number instead.',
@@ -390,10 +350,7 @@ class _BookingCardState extends State<BookingCard> {
       }
     } catch (_) {
       if (!mounted || !sameAccount) return;
-
-      showMessage(
-        'Could not open a phone app. Select and copy the number instead.',
-      );
+      showMessage('Could not open a phone app. Copy the number instead.');
     } finally {
       if (mounted) {
         setState(() => openingPhone = false);
@@ -401,25 +358,24 @@ class _BookingCardState extends State<BookingCard> {
     }
   }
 
-  Future<void> cancelBooking(String assignmentStatus) async {
+  Future<void> cancelBooking() async {
     if (!sameAccount ||
         cancelling ||
         confirmingCancellation ||
-        !canCancelStatus(assignmentStatus)) {
+        !entry.canCancel) {
       return;
     }
-
-    final entry = widget.entry;
+    final originalEntry = entry;
     confirmingCancellation = true;
     bool? confirmed;
-
     try {
       confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Cancel demo booking?'),
           content: Text(
-            '${entry.booking.pickup} → ${entry.booking.destination}\n\n'
+            '${originalEntry.booking.pickup} → '
+            '${originalEntry.booking.destination}\n\n'
             'The booking will remain in your account '
             'with a cancelled label.',
           ),
@@ -442,24 +398,21 @@ class _BookingCardState extends State<BookingCard> {
     } finally {
       confirmingCancellation = false;
     }
-
     if (!mounted ||
         !sameAccount ||
         confirmed != true ||
         cancelling ||
-        widget.entry.cancelled) {
+        !entry.canCancel) {
       return;
     }
-
+    // This card may disappear from the selected filter after cancellation.
     final messenger = ScaffoldMessenger.of(context);
     setState(() => cancelling = true);
-
     try {
-      // The store transaction and Firestore rules check the latest status.
-      await CloudBookingStore.cancel(entry);
-
-      if (FirebaseAuth.instance.currentUser?.uid != entry.userId) return;
-
+      await CloudBookingStore.cancel(originalEntry);
+      if (FirebaseAuth.instance.currentUser?.uid != originalEntry.userId) {
+        return;
+      }
       if (messenger.mounted) {
         messenger
           ..hideCurrentSnackBar()
@@ -468,15 +421,12 @@ class _BookingCardState extends State<BookingCard> {
           );
       }
     } catch (error) {
-      debugPrint('Booking cancellation failed: $error');
-
-      if (FirebaseAuth.instance.currentUser?.uid != entry.userId) return;
-
+      if (FirebaseAuth.instance.currentUser?.uid != originalEntry.userId) {
+        return;
+      }
       final message = error is StateError
           ? error.message.toString()
-          : 'Could not cancel. The trip may have started, '
-                'or your connection may be unavailable.';
-
+          : 'Could not cancel. Check your connection and try again.';
       if (messenger.mounted) {
         messenger
           ..hideCurrentSnackBar()
@@ -489,56 +439,216 @@ class _BookingCardState extends State<BookingCard> {
     }
   }
 
-  Future<void> shareTripDetails({
-    required String assignmentStatus,
-    Map<String, dynamic>? requestData,
-  }) async {
+  Future<void> rateDriver() async {
+    if (!sameAccount || ratingFlowOpen || savingRating || !entry.canRate) {
+      return;
+    }
+    final originalEntry = entry;
+    setState(() => ratingFlowOpen = true);
+    try {
+      final draft = await Navigator.of(context).push<DriverRatingDraft>(
+        MaterialPageRoute<DriverRatingDraft>(
+          builder: (_) => DriverRatingScreen(
+            driverName: originalEntry.driverName,
+            destination: originalEntry.booking.destination,
+          ),
+        ),
+      );
+      if (!mounted || !sameAccount || draft == null || !entry.canRate) return;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Submit your rating?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${draft.stars} out of 5 stars'),
+                if (draft.comment.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(draft.comment),
+                ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Your assigned driver can see this rating and review. '
+                  'You can submit it once for this trip.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Submit rating'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || !sameAccount || confirmed != true || !entry.canRate) {
+        return;
+      }
+      setState(() => savingRating = true);
+      await CloudBookingStore.rateDriver(
+        originalEntry,
+        stars: draft.stars,
+        comment: draft.comment,
+      );
+      if (!mounted || !sameAccount) return;
+      showMessage('Thank you! Your rating has been saved.');
+    } catch (error) {
+      if (!mounted || !sameAccount) return;
+      showMessage(
+        error is StateError
+            ? error.message.toString()
+            : error is ArgumentError
+            ? error.message.toString()
+            : 'Could not save your rating. Check your connection '
+                  'and Firebase rules, then try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          ratingFlowOpen = false;
+          savingRating = false;
+        });
+      }
+    }
+  }
+
+  Widget ratingPanel() {
+    if (!entry.completed) return const SizedBox.shrink();
+    final stars = entry.ratingStars;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE7AF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            stars == null ? 'How was your journey?' : 'Your driver rating',
+            style: const TextStyle(color: _navy, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (stars != null) ...[
+            Semantics(
+              label: 'Your rating: $stars out of 5 stars',
+              child: ExcludeSemantics(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 2,
+                  children: [
+                    for (int index = 1; index <= 5; index++)
+                      Icon(
+                        index <= stars
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        color: _amber,
+                        size: 25,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        '$stars/5',
+                        style: const TextStyle(
+                          color: _navy,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (entry.ratingComment.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                entry.ratingComment,
+                style: const TextStyle(color: _navy, height: 1.5),
+              ),
+            ],
+            const SizedBox(height: 8),
+            const Text(
+              'Rating submitted. Thank you for your feedback.',
+              style: TextStyle(color: _muted, fontSize: 12),
+            ),
+          ] else if (entry.canRate) ...[
+            const Text(
+              'Rate your experience with the driver for this completed trip.',
+              style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: ratingFlowOpen || savingRating ? null : rateDriver,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _blue,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.star_outline_rounded),
+                label: Text(
+                  savingRating
+                      ? 'Saving rating...'
+                      : ratingFlowOpen
+                      ? 'Rating in progress...'
+                      : 'Rate driver',
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> shareTripDetails() async {
     if (!sameAccount) return;
-
-    final entry = widget.entry;
-    final trip = entry.booking;
-    final cancelled = entry.cancelled || assignmentStatus == 'Cancelled';
-
+    final currentEntry = entry;
+    final trip = currentEntry.booking;
     final date = MaterialLocalizations.of(
       context,
     ).formatMediumDate(trip.departure);
     final time = TimeOfDay.fromDateTime(trip.departure).format(context);
-
-    final driverName = readText(requestData, 'driverName');
-    final driverPhone = readText(requestData, 'driverPhone');
-    final registration = readText(requestData, 'driverRegistration');
-
     final details = [
       'TripLanka — Trip details',
       '',
-      'Status: ${cancelled ? 'Cancelled' : assignmentStatus}',
+      'Status: ${currentEntry.statusLabel}',
       'Pickup: ${trip.pickup}',
       'Destination: ${trip.destination}',
       if (trip.stops.isNotEmpty) 'Stops: ${trip.stops.join(' → ')}',
       'Departure / request time: $date at $time',
       'Vehicle: ${trip.vehicle}',
       'Passengers: ${trip.passengers}',
-      if (!cancelled && hasAssignedDriver(assignmentStatus)) ...[
+      if (currentEntry.hasAssignedDriver) ...[
         '',
-        if (driverName.isNotEmpty) 'Driver: $driverName',
-        if (driverPhone.isNotEmpty) 'Driver phone: $driverPhone',
-        if (registration.isNotEmpty) 'Vehicle registration: $registration',
+        if (currentEntry.driverName.isNotEmpty)
+          'Driver: ${currentEntry.driverName}',
+        if (currentEntry.driverPhone.isNotEmpty)
+          'Driver phone: ${currentEntry.driverPhone}',
+        if (currentEntry.driverRegistration.isNotEmpty)
+          'Vehicle registration: ${currentEntry.driverRegistration}',
       ],
       if (trip.notes.isNotEmpty) 'Notes: ${trip.notes}',
       '',
-      'Demo booking.',
-      'This message does not include live location.',
+      'Demo booking. This message does not include live location.',
     ].join('\n');
-
     try {
       await Clipboard.setData(ClipboardData(text: details));
-
       if (!mounted || !sameAccount) return;
-
       showMessage('Trip details copied. Paste them into your messaging app.');
     } catch (_) {
       if (!mounted || !sameAccount) return;
-
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -557,18 +667,16 @@ class _BookingCardState extends State<BookingCard> {
 
   void openMap() {
     if (!sameAccount) return;
-
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
-            TripMapScreen(booking: booking, requestId: widget.entry.requestId),
+            TripMapScreen(booking: booking, requestId: entry.requestId),
       ),
     );
   }
 
   void openSplitCost() {
     if (!sameAccount) return;
-
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SplitCostScreen(passengers: booking.passengers),
@@ -578,7 +686,6 @@ class _BookingCardState extends State<BookingCard> {
 
   void openSafety() {
     if (!sameAccount) return;
-
     Navigator.of(
       context,
     ).push(MaterialPageRoute<void>(builder: (_) => const TravelSafetyScreen()));
@@ -591,6 +698,12 @@ class _BookingCardState extends State<BookingCard> {
     Color color = _blue,
     bool selectable = false,
   }) {
+    const valueStyle = TextStyle(
+      color: _navy,
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      height: 1.4,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -616,24 +729,9 @@ class _BookingCardState extends State<BookingCard> {
                 ),
                 const SizedBox(height: 4),
                 if (selectable)
-                  SelectableText(
-                    value,
-                    style: const TextStyle(
-                      color: _navy,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )
+                  SelectableText(value, style: valueStyle)
                 else
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      color: _navy,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      height: 1.4,
-                    ),
-                  ),
+                  Text(value, style: valueStyle),
               ],
             ),
           ),
@@ -665,11 +763,7 @@ class _BookingCardState extends State<BookingCard> {
     );
   }
 
-  Widget actionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
+  Widget actionButton(String label, IconData icon, VoidCallback onPressed) {
     return OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
@@ -684,46 +778,24 @@ class _BookingCardState extends State<BookingCard> {
     );
   }
 
-  Widget assignmentPanel(
-    String status,
-    Map<String, dynamic>? data, {
-    bool allowRetry = false,
-  }) {
-    final assigned = hasAssignedDriver(status);
-    final inProgress = status == 'Trip in progress';
-
-    final color = switch (status) {
-      'Driver accepted' => _green,
-      'Trip in progress' => _amber,
-      'Trip completed' => _green,
-      'Cancelled' => _red,
-      _ => _muted,
-    };
-
-    final message = switch (status) {
-      'Driver accepted' => 'A driver has accepted this demo request.',
-      'Trip in progress' => 'Your driver has started this journey.',
-      'Trip completed' => 'Your driver has marked this journey as completed.',
-      'Waiting for driver' =>
-        'Your request is available to matching approved drivers.',
-      'Cancelled' => 'This booking has been cancelled.',
-      'Checking driver' => 'Loading the latest trip status.',
-      'Earlier booking' =>
-        'This earlier booking was not posted as a driver request.',
-      'Request unavailable' => 'The linked request could not be found.',
-      _ => 'Could not verify the trip status. Please try again.',
-    };
-
-    final panelColor = inProgress
+  Widget assignmentPanel() {
+    final message = entry.cancelled
+        ? 'This booking has been cancelled.'
+        : switch (entry.status) {
+            'pending' =>
+              'Your request is available to matching approved drivers.',
+            'accepted' => 'A driver has accepted this demo request.',
+            'in_progress' => 'Your driver has started this journey.',
+            'completed' => 'Your driver has marked this journey as completed.',
+            'legacy' =>
+              'This earlier booking was not posted as a driver request.',
+            _ => 'Could not verify the trip status. Refresh your bookings.',
+          };
+    final panelColor = entry.inProgress
         ? const Color(0xFFFFF8EB)
-        : assigned
+        : entry.hasAssignedDriver
         ? const Color(0xFFEEF9F5)
         : _background;
-
-    final driverName = readText(data, 'driverName');
-    final driverPhone = readText(data, 'driverPhone');
-    final registration = readText(data, 'driverRegistration');
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -737,19 +809,20 @@ class _BookingCardState extends State<BookingCard> {
           Row(
             children: [
               Icon(
-                inProgress
-                    ? Icons.directions_car_outlined
-                    : assigned
+                entry.hasAssignedDriver
                     ? Icons.check_circle_outline
                     : Icons.info_outline,
-                color: color,
+                color: statusColor,
                 size: 21,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  status,
-                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                  entry.statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -759,32 +832,36 @@ class _BookingCardState extends State<BookingCard> {
             message,
             style: const TextStyle(color: _muted, fontSize: 12, height: 1.5),
           ),
-          if (assigned) ...[
+          if (entry.hasAssignedDriver) ...[
             const SizedBox(height: 10),
             informationRow(
               label: 'Driver name',
-              value: driverName.isEmpty ? 'Not provided' : driverName,
+              value: entry.driverName.isEmpty
+                  ? 'Not provided'
+                  : entry.driverName,
               icon: Icons.person_outline,
             ),
             informationRow(
               label: 'Driver phone',
-              value: driverPhone.isEmpty ? 'Not provided' : driverPhone,
+              value: entry.driverPhone.isEmpty
+                  ? 'Not provided'
+                  : entry.driverPhone,
               icon: Icons.phone_outlined,
               selectable: true,
             ),
             informationRow(
               label: 'Vehicle registration',
-              value: registration.isEmpty ? 'Not provided' : registration,
+              value: entry.driverRegistration.isEmpty
+                  ? 'Not provided'
+                  : entry.driverRegistration,
               icon: Icons.badge_outlined,
             ),
-            if (driverPhone.isNotEmpty) ...[
+            if (entry.driverPhone.isNotEmpty) ...[
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: openingPhone
-                      ? null
-                      : () => openPhoneApp(driverPhone),
+                  onPressed: openingPhone ? null : openPhoneApp,
                   style: FilledButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
@@ -795,12 +872,14 @@ class _BookingCardState extends State<BookingCard> {
               ),
             ],
           ],
-          if (allowRetry) ...[
+          if (!entry.cancelled &&
+              entry.status == 'unavailable' &&
+              widget.onRetry != null) ...[
             const SizedBox(height: 8),
             TextButton.icon(
-              onPressed: retryRequest,
+              onPressed: widget.onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Try again'),
+              label: const Text('Refresh bookings'),
             ),
           ],
         ],
@@ -808,43 +887,16 @@ class _BookingCardState extends State<BookingCard> {
     );
   }
 
-  Widget buildCard(
-    String assignmentStatus,
-    Map<String, dynamic>? requestData, {
-    bool allowRetry = false,
-  }) {
+  @override
+  Widget build(BuildContext context) {
+    if (!sameAccount) return const SizedBox.shrink();
     final date = MaterialLocalizations.of(
       context,
     ).formatMediumDate(booking.departure);
     final time = TimeOfDay.fromDateTime(booking.departure).format(context);
-
-    final cancelled = widget.entry.cancelled || assignmentStatus == 'Cancelled';
-    final accepted = assignmentStatus == 'Driver accepted';
-    final inProgress = assignmentStatus == 'Trip in progress';
-    final completed = assignmentStatus == 'Trip completed';
-
-    final statusColor = cancelled
-        ? _red
-        : inProgress
-        ? _amber
-        : accepted || completed
-        ? _green
-        : _blue;
-
-    final badgeLabel = cancelled
-        ? 'Cancelled'
-        : completed
-        ? 'Completed'
-        : inProgress
-        ? 'In progress'
-        : accepted
-        ? 'Accepted'
-        : 'Active demo';
-
     final hasMapLocations =
         validCoordinates(booking.pickupCoordinates) &&
         validCoordinates(booking.destinationCoordinates);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
@@ -963,11 +1015,8 @@ class _BookingCardState extends State<BookingCard> {
             ),
           ],
           const SizedBox(height: 16),
-          assignmentPanel(
-            cancelled ? 'Cancelled' : assignmentStatus,
-            requestData,
-            allowRetry: !cancelled && allowRetry,
-          ),
+          assignmentPanel(),
+          if (entry.completed) ...[const SizedBox(height: 16), ratingPanel()],
           const SizedBox(height: 16),
           if (hasMapLocations)
             SizedBox(
@@ -998,34 +1047,29 @@ class _BookingCardState extends State<BookingCard> {
             runSpacing: 4,
             children: [
               actionButton(
-                label: 'Split the cost',
-                icon: Icons.groups_outlined,
-                onPressed: openSplitCost,
+                'Split the cost',
+                Icons.groups_outlined,
+                openSplitCost,
               ),
               actionButton(
-                label: 'Share trip details',
-                icon: Icons.share_outlined,
-                onPressed: () => shareTripDetails(
-                  assignmentStatus: assignmentStatus,
-                  requestData: requestData,
-                ),
+                'Share trip details',
+                Icons.share_outlined,
+                shareTripDetails,
               ),
               actionButton(
-                label: 'Travel safety',
-                icon: Icons.health_and_safety_outlined,
-                onPressed: openSafety,
+                'Travel safety',
+                Icons.health_and_safety_outlined,
+                openSafety,
               ),
             ],
           ),
-          if (!cancelled && canCancelStatus(assignmentStatus)) ...[
+          if (entry.canCancel) ...[
             const SizedBox(height: 8),
             const Divider(color: _border),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: cancelling
-                    ? null
-                    : () => cancelBooking(assignmentStatus),
+                onPressed: cancelling ? null : cancelBooking,
                 style: TextButton.styleFrom(foregroundColor: _red),
                 icon: cancelling
                     ? const SizedBox(
@@ -1045,58 +1089,6 @@ class _BookingCardState extends State<BookingCard> {
           ],
         ],
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!sameAccount) return const SizedBox.shrink();
-
-    if (widget.entry.cancelled) {
-      return buildCard('Cancelled', null);
-    }
-
-    if (requestStream == null) {
-      return buildCard('Earlier booking', null);
-    }
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      key: ValueKey(
-        '${widget.entry.userId}:'
-        '${widget.entry.requestId}:$requestVersion',
-      ),
-      stream: requestStream,
-      builder: (context, snapshot) {
-        if (!sameAccount) return const SizedBox.shrink();
-
-        if (snapshot.hasError) {
-          return buildCard('Assignment unavailable', null, allowRetry: true);
-        }
-
-        if (!snapshot.hasData) {
-          return buildCard('Checking driver', null);
-        }
-
-        final data = snapshot.data!.data();
-
-        if (data == null) {
-          return buildCard('Request unavailable', null, allowRetry: true);
-        }
-
-        if (data['ownerId'] != widget.entry.userId ||
-            data['bookingId'] != widget.entry.id) {
-          return buildCard('Assignment unavailable', null, allowRetry: true);
-        }
-
-        return switch (readText(data, 'status')) {
-          'pending' => buildCard('Waiting for driver', data),
-          'accepted' => buildCard('Driver accepted', data),
-          'in_progress' => buildCard('Trip in progress', data),
-          'completed' => buildCard('Trip completed', data),
-          'cancelled' => buildCard('Cancelled', null),
-          _ => buildCard('Assignment unavailable', null, allowRetry: true),
-        };
-      },
     );
   }
 }

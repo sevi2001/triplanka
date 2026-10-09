@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "662912161699",
+    "project_id": "triplanka-6043b",
+    "storage_bucket": "triplanka-6043b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:662912161699:android:b7d5b0c323657b3ac56c16",
+        "android_client_info": {
+          "package_name": "com.example.triplanka"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAkfs5nqWSf_mGNN7yz4Vh_gXGsMh0SRSA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

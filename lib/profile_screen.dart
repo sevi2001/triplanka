@@ -1,7 +1,6 @@
-import 'dart:convert';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,22 +10,22 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  static const blue = Color(0xFF2563EB);
+  static const navy = Color(0xFF14213D);
+  static const muted = Color(0xFF738097);
+  static const background = Color(0xFFF5F7FB);
+  static const borderColor = Color(0xFFE5EAF2);
+
   final formKey = GlobalKey<FormState>();
-  final preferences = SharedPreferencesAsync();
 
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
   final emergencyNameController = TextEditingController();
   final emergencyPhoneController = TextEditingController();
 
-  static const storageKey = 'triplanka_profile_v1';
-
   bool loading = true;
   bool saving = false;
-  bool loadFailed = false;
-
-  String? statusMessage;
-  bool statusIsError = false;
+  String? loadError;
 
   @override
   void initState() {
@@ -43,37 +42,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  DocumentReference<Map<String, dynamic>> profileDocument(String uid) {
+    return FirebaseFirestore.instance.collection('users').doc(uid);
+  }
+
+  bool sameAccount(String uid) {
+    return mounted && FirebaseAuth.instance.currentUser?.uid == uid;
+  }
+
+  String readableError(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Your account cannot access this profile. '
+              'Please try signing in again.';
+        case 'unavailable':
+          return 'Check your internet connection and try again.';
+        case 'unauthenticated':
+          return 'Please sign out and sign in again.';
+      }
+    }
+
+    return 'Something went wrong. Please try again.';
+  }
+
   Future<void> loadProfile() async {
+    if (!mounted || saving) return;
+
     setState(() {
       loading = true;
-      loadFailed = false;
-      statusMessage = null;
+      loadError = null;
     });
 
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      setState(() {
+        loading = false;
+        loadError = 'Sign in to access your profile.';
+      });
+      return;
+    }
+
     try {
-      final stored = await preferences.getString(storageKey);
+      final document = await profileDocument(user.uid).get();
 
       if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser?.uid != user.uid) return;
 
-      if (stored != null) {
-        final data = jsonDecode(stored) as Map<String, dynamic>;
+      final data = document.data();
 
-        nameController.text = data['name'] as String? ?? '';
-        phoneController.text = data['phone'] as String? ?? '';
-        emergencyNameController.text = data['emergencyName'] as String? ?? '';
-        emergencyPhoneController.text = data['emergencyPhone'] as String? ?? '';
-      }
+      nameController.text = data?['name'] as String? ?? '';
+      phoneController.text = data?['phone'] as String? ?? '';
+      emergencyNameController.text = data?['emergencyName'] as String? ?? '';
+      emergencyPhoneController.text = data?['emergencyPhone'] as String? ?? '';
     } catch (error) {
-      debugPrint('Profile load failed: $error');
-
       if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser?.uid != user.uid) return;
 
-      loadFailed = true;
+      debugPrint('Profile load failed: $error');
+      loadError = readableError(error);
     } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
+      if (sameAccount(user.uid)) {
+        setState(() => loading = false);
       }
     }
   }
@@ -81,9 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? validatePhone(String? value) {
     final text = value?.trim() ?? '';
 
-    if (text.isEmpty) {
-      return 'Enter a phone number';
-    }
+    if (text.isEmpty) return 'Enter a phone number';
 
     if (!RegExp(r'^\+?[0-9 ()-]+$').hasMatch(text)) {
       return 'Use digits and an optional country code';
@@ -92,86 +121,110 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final digits = text.replaceAll(RegExp(r'\D'), '');
 
     if (digits.length < 9 || digits.length > 15) {
-      return 'Enter a phone number with 9–15 digits';
+      return 'Enter a valid phone number';
     }
 
     return null;
   }
 
   Future<void> saveProfile() async {
-    if (saving || loading || loadFailed) return;
+    if (loading || saving || loadError != null) return;
 
     FocusScope.of(context).unfocus();
 
-    final valid = formKey.currentState?.validate() ?? false;
+    if (!(formKey.currentState?.validate() ?? false)) return;
 
-    if (!valid) {
-      setState(() {
-        statusMessage =
-            'Check the highlighted fields above. '
-            'Enter your name and a valid phone number. '
-            'For emergency contact, fill both fields '
-            'or leave both empty.';
-        statusIsError = true;
-      });
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please sign in again.')));
       return;
     }
 
-    setState(() {
-      saving = true;
-      statusMessage = 'Saving your profile...';
-      statusIsError = false;
-    });
-
-    final data = {
+    final data = <String, dynamic>{
       'name': nameController.text.trim(),
       'phone': phoneController.text.trim(),
       'emergencyName': emergencyNameController.text.trim(),
       'emergencyPhone': emergencyPhoneController.text.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    setState(() => saving = true);
+
     try {
-      await preferences.setString(storageKey, jsonEncode(data));
-
-      // Verify that the saved values can be read back.
-      final stored = await preferences.getString(storageKey);
-
-      if (stored == null) {
-        throw StateError('Saved profile could not be read back.');
-      }
-
-      final restored = jsonDecode(stored) as Map<String, dynamic>;
-
-      for (final entry in data.entries) {
-        if (restored[entry.key] != entry.value) {
-          throw StateError('Saved profile verification failed.');
-        }
-      }
+      await profileDocument(user.uid).set(data, SetOptions(merge: true));
 
       if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser?.uid != user.uid) return;
 
-      setState(() {
-        statusMessage = 'Profile saved successfully on this device.';
-        statusIsError = false;
-      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Profile saved to your account.')),
+        );
     } catch (error) {
+      if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser?.uid != user.uid) return;
+
       debugPrint('Profile save failed: $error');
 
-      if (!mounted) return;
-
-      setState(() {
-        statusMessage =
-            'Could not save your profile. Please try again. '
-            'Check the terminal for the error.';
-        statusIsError = true;
-      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(readableError(error))));
     } finally {
-      if (mounted) {
-        setState(() {
-          saving = false;
-        });
+      if (sameAccount(user.uid)) {
+        setState(() => saving = false);
       }
     }
+  }
+
+  Widget section({
+    required String title,
+    required IconData icon,
+    required Widget child,
+    String? subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: blue, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: const TextStyle(color: muted, fontSize: 12, height: 1.5),
+            ),
+          ],
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
   }
 
   Widget profileField({
@@ -185,21 +238,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
       controller: controller,
       enabled: !saving,
       keyboardType: phone ? TextInputType.phone : TextInputType.name,
+      textCapitalization: phone
+          ? TextCapitalization.none
+          : TextCapitalization.words,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: validator,
-      onChanged: (_) {
-        if (statusMessage != null) {
-          setState(() {
-            statusMessage = null;
-          });
-        }
-      },
+      style: const TextStyle(color: navy),
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: Colors.teal),
+        labelStyle: const TextStyle(color: muted, fontSize: 13),
+        prefixIcon: Icon(icon, color: blue, size: 22),
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: background,
+        contentPadding: const EdgeInsets.all(16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: blue, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.red),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.red, width: 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget profileHeader(String email) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [blue, Color(0xFF1547B8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          const CircleAvatar(
+            radius: 38,
+            backgroundColor: Color(0xFFE8F0FF),
+            child: Icon(Icons.person_outline, color: blue, size: 44),
+          ),
+          const SizedBox(height: 14),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: nameController,
+            builder: (context, value, _) {
+              final name = value.text.trim();
+
+              return Text(
+                name.isEmpty ? 'Your profile' : name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              );
+            },
+          ),
+          if (email.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Text(
+              email,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFFDCE8FF), fontSize: 13),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -207,10 +332,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const SafeArea(child: Center(child: CircularProgressIndicator()));
+      return const SafeArea(
+        child: ColoredBox(
+          color: background,
+          child: Center(child: CircularProgressIndicator(color: blue)),
+        ),
+      );
     }
 
-    if (loadFailed) {
+    if (loadError != null) {
       return SafeArea(
         child: Center(
           child: Padding(
@@ -218,20 +348,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: Colors.redAccent,
-                ),
+                const Icon(Icons.cloud_off_outlined, color: blue, size: 48),
                 const SizedBox(height: 16),
-                const Text(
-                  'Could not load your profile.',
+                Text(
+                  loadError!,
                   textAlign: TextAlign.center,
+                  style: const TextStyle(color: muted, height: 1.5),
                 ),
-                const SizedBox(height: 16),
-                FilledButton(
+                const SizedBox(height: 20),
+                FilledButton.icon(
                   onPressed: loadProfile,
-                  child: const Text('Try again'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try again'),
                 ),
               ],
             ),
@@ -240,131 +372,179 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+
     return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Form(
-            key: formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(20),
+      child: ColoredBox(
+        color: background,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
               children: [
-                const Text(
-                  'My profile',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 24),
-                const Center(
-                  child: CircleAvatar(
-                    radius: 42,
-                    backgroundColor: Color(0xFFE0F2F1),
-                    child: Icon(Icons.person, size: 48, color: Colors.teal),
+                Expanded(
+                  child: Form(
+                    key: formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.all(20),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      children: [
+                        const Text(
+                          'My profile',
+                          style: TextStyle(
+                            color: navy,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Keep your travel details up to date.',
+                          style: TextStyle(color: muted),
+                        ),
+                        const SizedBox(height: 22),
+                        profileHeader(email),
+                        section(
+                          title: 'Personal details',
+                          icon: Icons.person_outline,
+                          child: Column(
+                            children: [
+                              profileField(
+                                label: 'Full name',
+                                icon: Icons.badge_outlined,
+                                controller: nameController,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter your name';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 14),
+                              profileField(
+                                label: 'Phone number',
+                                icon: Icons.phone_outlined,
+                                controller: phoneController,
+                                validator: validatePhone,
+                                phone: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                        section(
+                          title: 'Emergency contact',
+                          icon: Icons.health_and_safety_outlined,
+                          subtitle:
+                              'Optional. Add someone you can '
+                              'contact during your journey.',
+                          child: Column(
+                            children: [
+                              profileField(
+                                label: 'Contact name',
+                                icon: Icons.person_outline,
+                                controller: emergencyNameController,
+                                validator: (value) {
+                                  if (emergencyPhoneController.text
+                                          .trim()
+                                          .isNotEmpty &&
+                                      (value == null || value.trim().isEmpty)) {
+                                    return 'Enter the emergency '
+                                        'contact name';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 14),
+                              profileField(
+                                label: 'Contact phone number',
+                                icon: Icons.phone_outlined,
+                                controller: emergencyPhoneController,
+                                phone: true,
+                                validator: (value) {
+                                  final text = value?.trim() ?? '';
+
+                                  if (text.isEmpty &&
+                                      emergencyNameController.text
+                                          .trim()
+                                          .isEmpty) {
+                                    return null;
+                                  }
+
+                                  return validatePhone(value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF4FF),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline, color: blue, size: 21),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Details are saved to your signed-in '
+                                  'account. Phone numbers are not '
+                                  'verified. Saving an emergency '
+                                  'contact does not call or notify them.',
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 12,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 24),
-                profileField(
-                  label: 'Full name',
-                  icon: Icons.person_outline,
-                  controller: nameController,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Enter your name';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                profileField(
-                  label: 'Phone number',
-                  icon: Icons.phone_outlined,
-                  controller: phoneController,
-                  validator: validatePhone,
-                  phone: true,
-                ),
-                const SizedBox(height: 28),
-                const Text(
-                  'Emergency contact',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Optional. Fill both fields or leave both empty. '
-                  'Saving this contact does not automatically '
-                  'call or notify them.',
-                  style: TextStyle(color: Colors.black54),
-                ),
-                const SizedBox(height: 16),
-                profileField(
-                  label: 'Contact name',
-                  icon: Icons.contact_emergency_outlined,
-                  controller: emergencyNameController,
-                  validator: (value) {
-                    final hasPhone = emergencyPhoneController.text
-                        .trim()
-                        .isNotEmpty;
-
-                    final hasName = value?.trim().isNotEmpty ?? false;
-
-                    if (hasPhone && !hasName) {
-                      return 'Enter the emergency contact name';
-                    }
-
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                profileField(
-                  label: 'Contact phone number',
-                  icon: Icons.phone_outlined,
-                  controller: emergencyPhoneController,
-                  phone: true,
-                  validator: (value) {
-                    final text = value?.trim() ?? '';
-                    final name = emergencyNameController.text.trim();
-
-                    if (text.isEmpty && name.isEmpty) {
-                      return null;
-                    }
-
-                    return validatePhone(value);
-                  },
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Saved locally on this device. '
-                  'This is not a verified account.',
-                  style: TextStyle(color: Colors.black54),
-                ),
-                const SizedBox(height: 20),
-
-                // Keep the result visible near the Save button.
-                if (statusMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: statusIsError
-                          ? const Color(0xFFFFEBEE)
-                          : const Color(0xFFE0F2F1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      statusMessage!,
-                      style: TextStyle(
-                        color: statusIsError
-                            ? Colors.red.shade900
-                            : Colors.teal.shade900,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: borderColor)),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: saving ? null : saveProfile,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: blue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.check_circle_outline),
+                      label: Text(
+                        saving ? 'Saving...' : 'Save profile',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
-
-                FilledButton(
-                  onPressed: saving ? null : saveProfile,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                  ),
-                  child: Text(saving ? 'Saving...' : 'Save profile'),
                 ),
               ],
             ),
